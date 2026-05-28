@@ -69,7 +69,7 @@ class LdapUserBackend extends ABackend implements
      * Indique si l'utilisateur existe dans l'AD.
      * Utilisé par Nextcloud pour la complétion automatique et le partage.
      */
-    public function userExists(string $uid): bool {
+    public function userExists($uid): bool {
         try {
             return $this->ldapService->userExists($uid);
         } catch (\Throwable) {
@@ -81,7 +81,7 @@ class LdapUserBackend extends ABackend implements
      * Retourne la liste des UIDs (avec filtre, pagination).
      * Utilisé dans le panel admin NC et pour la saisie semi-automatique.
      */
-    public function getUsers(string $search = '', ?int $limit = null, ?int $offset = null): array {
+    public function getUsers($search = '', $limit = null, $offset = null): array {
         try {
             return $this->ldapService->getAllUserUids($search, $limit, $offset);
         } catch (\Throwable $e) {
@@ -96,7 +96,7 @@ class LdapUserBackend extends ABackend implements
      * Retourne le nom complet de l'utilisateur (displayName ou cn depuis l'AD).
      * Nextcloud l'utilise à la première connexion pour pré-remplir le profil.
      */
-    public function getDisplayName(string $uid): string {
+    public function getDisplayName($uid): string {
         try {
             return $this->ldapService->getUserDisplayName($uid);
         } catch (\Throwable) {
@@ -110,7 +110,7 @@ class LdapUserBackend extends ABackend implements
      * @param list<string> $userList
      * @return array<string, string>
      */
-    public function getDisplayNames(string $search = '', ?int $limit = null, ?int $offset = null): array {
+    public function getDisplayNames($search = '', $limit = null, $offset = null): array {
         $names = [];
         foreach ($this->getUsers($search, $limit, $offset) as $uid) {
             $names[$uid] = $this->getDisplayName($uid);
