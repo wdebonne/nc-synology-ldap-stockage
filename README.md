@@ -1,39 +1,70 @@
 # nc-synology-ldap-stockage
 
-**Application Nextcloud** pour l'intégration automatique de l'Active Directory Synology avec la gestion des groupes et du stockage externe SMB.
+**Application Nextcloud** pour l'intégration complète de l'Active Directory Synology : authentification, groupes, ACL et stockage externe SMB — sans app tierce.
 
 [![Nextcloud](https://img.shields.io/badge/Nextcloud-25--30-0082c9?logo=nextcloud)](https://nextcloud.com)
 [![PHP](https://img.shields.io/badge/PHP-8.0%2B-777bb4?logo=php)](https://php.net)
 [![Licence](https://img.shields.io/badge/Licence-AGPL--3.0-green)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.0.0-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/Version-2.0.0-blue)](CHANGELOG.md)
 
 ---
 
 ## Fonctionnalités
 
-- **Synchronisation automatique** des groupes Active Directory Synology → groupes Nextcloud à chaque connexion utilisateur
-- **Promotion automatique** en administrateur Nextcloud via un groupe AD configurable (ex: `ADMIN_NEXTCLOUD`)
-- **Montage SMB automatique** du stockage externe Synology par groupe (ex: groupe `Compta` → partage `\\Synology\Compta`)
-- **Interface d'administration** visuelle, intuitive, entièrement gérable par les administrateurs
-- **Synchronisation en masse** de tous les utilisateurs en un clic
-- Compatible **Synology Directory Service** (AD interne basé sur Samba)
+### Authentification (nouveau v2.0)
+- **Backend d'authentification intégré** — les utilisateurs se connectent avec leurs identifiants Windows (sAMAccountName + mot de passe AD), sans app `user_ldap` externe
+- **Provisionnement automatique** — le compte Nextcloud est créé à la première connexion, avec le nom complet récupéré depuis l'AD
+- **Source unique de vérité** — désactiver un compte sur Synology = l'accès Nextcloud est immédiatement révoqué
+
+### Gestion des groupes
+- **Synchronisation automatique** des groupes AD → groupes Nextcloud à chaque connexion
+- **Promotion admin automatique** via un groupe AD configurable (`ADMIN_NEXTCLOUD` par défaut)
+- Support **Active Directory** (attribut `memberOf`) et **POSIX/OpenLDAP** (attribut `memberUid`)
+
+### Stockage — trois modes
+| Mode | Description |
+|------|-------------|
+| **Manuel** | Mapping explicite : groupe AD → partage SMB précis |
+| **Auto par nom** | Sous-dossier = nom du groupe (ex : groupe `Compta` → `//NAS/Externe/Compta`) |
+| **Auto par ACL** ★ | Lit les ACL Synology via l'API DSM → chaque utilisateur voit exactement les dossiers auxquels ses groupes AD donnent accès, identique à un lecteur réseau Windows |
+
+### Arborescence identique Windows / Nextcloud
+Avec le champ **Préfixe de montage** (ex : `NAS`), les dossiers apparaissent dans Nextcloud sous `/NAS/Compta/2026` — même chemin que le lecteur réseau sur le PC Windows.
+
+---
 
 ## Comment ça marche
 
 ```
-Connexion utilisateur LDAP
+Utilisateur ouvre Nextcloud → saisit login Windows + mot de passe
          │
          ▼
-  Requête memberOf AD
+  LdapUserBackend::checkPassword()
+  Bind LDAP avec DN + mot de passe utilisateur
+         │ Succès
+         ▼
+  Nextcloud crée le compte automatiquement (1ère connexion)
+  Récupère le nom complet depuis l'AD
          │
-    ┌────┴─────────────────────────────┐
-    │ Groupe ADMIN_NEXTCLOUD ?         │──► Promu Admin Nextcloud
-    │ Groupe Compta ?                  │──► Groupe NC Compta → Dossier SMB /Compta
-    │ Groupe RH ?                      │──► Groupe NC RH → Dossier SMB /RH
-    └──────────────────────────────────┘
+         ▼
+  PostLoginEvent → GroupSyncService
+  ┌─────────────────────────────────────────────┐
+  │ Groupe ADMIN_NEXTCLOUD ?  → Admin NC         │
+  │ Mode ACL → lit les ACL sur l'API DSM        │
+  │   Compta : [Responsable, Compta]            │
+  │   RH     : [RH, DRH]                        │
+  │                                             │
+  │ Aurélie (Responsable) → /NAS/Compta         │
+  │ Martin  (RH)          → /NAS/RH             │
+  │ DGS (Compta + RH)     → /NAS/Compta + /NAS/RH│
+  └─────────────────────────────────────────────┘
+         │
+         ▼
+  Montages SMB créés via Files_External API
+  Utilisateur voit ses dossiers — identique au lecteur réseau Windows
 ```
 
-L'utilisateur voit **uniquement** les dossiers correspondant à ses groupes AD, montés automatiquement via le stockage externe Nextcloud.
+---
 
 ## Prérequis
 
@@ -42,8 +73,11 @@ L'utilisateur voit **uniquement** les dossiers correspondant à ses groupes AD, 
 | Nextcloud | 25 |
 | PHP | 8.0 |
 | Extension PHP | `ldap`, `smbclient` |
-| App NC | `user_ldap` (activée) |
 | App NC | `files_external` (activée) |
+
+> **Plus besoin de `user_ldap`** — l'authentification est intégrée depuis la v2.0.
+
+---
 
 ## Installation rapide
 
@@ -54,7 +88,8 @@ git clone https://github.com/wdebonne/nc-synology-ldap-stockage.git
 # Copier l'app dans Nextcloud
 sudo cp -r nc-synology-ldap-stockage/synoldap /var/www/nextcloud/apps/
 
-# Activer l'app
+# Activer l'app (files_external est une dépendance)
+sudo -u www-data php /var/www/nextcloud/occ app:enable files_external
 sudo -u www-data php /var/www/nextcloud/occ app:enable synoldap
 ```
 
@@ -66,40 +101,57 @@ sudo bash synoldap/install.sh /var/www/nextcloud
 
 Voir le [guide d'installation complet](docs/INSTALLATION.md).
 
-## Configuration
+---
 
-Une fois installée, rendez-vous dans **Nextcloud → Paramètres → Administration → Synology LDAP**.
+## Configuration en 3 étapes
 
-![Interface d'administration SynoLDAP](docs/img/screenshot-admin.png)
+### 1. LDAP / Active Directory
+Renseigner l'hôte Synology, le compte de service (Bind DN), les Base DN.
 
-Voir le [guide de configuration](docs/CONFIGURATION.md).
+### 2. Connexion Synology (SMB + API DSM)
+- **SMB** : compte de service pour le montage des dossiers
+- **API DSM** (port 5000) : compte admin pour la lecture des ACL
+
+### 3. Correspondances groupes ↔ stockage
+Créer une ligne **Auto ACL** avec le partage racine (ex : `Externe`) et le préfixe NC (ex : `NAS`).
+
+Voir le [guide de configuration complet](docs/CONFIGURATION.md).
+
+---
+
+## Exemple concret
+
+**Situation sur Synology :**
+- Partage `Externe` avec sous-dossiers `Compta`, `RH`, `Direction`
+- Groupe AD `Responsable` → droits R/W sur `Compta`
+- Groupe AD `RH` → droits R/W sur `RH`
+
+**Configuration synoldap :**
+- Mode : Auto ACL
+- Partage racine : `Externe`
+- Préfixe NC : `NAS`
+
+**Résultat dans Nextcloud :**
+
+| Utilisateur | Groupes AD | Voit dans Nextcloud |
+|-------------|------------|---------------------|
+| Aurélie | `Responsable` | `/NAS/Compta/` |
+| Martin | `RH` | `/NAS/RH/` |
+| Sophie (DGS) | `Responsable` + `RH` | `/NAS/Compta/` et `/NAS/RH/` |
+
+---
 
 ## Documentation
 
 | Document | Description |
 |----------|-------------|
 | [Installation](docs/INSTALLATION.md) | Guide d'installation détaillé |
-| [Configuration](docs/CONFIGURATION.md) | Configuration LDAP, SMB et groupes |
-| [API](docs/API.md) | Référence API REST admin |
+| [Configuration](docs/CONFIGURATION.md) | Configuration LDAP, SMB, API DSM, modes de montage |
+| [API REST](docs/API.md) | Référence des endpoints d'administration |
 | [Dépannage](docs/TROUBLESHOOTING.md) | Résolution des problèmes courants |
 | [Architecture](docs/ARCHITECTURE.md) | Structure technique du projet |
 
-## Exemple de configuration rapide
-
-**Synology AD :**
-- Hôte : `192.168.1.100`
-- Port : `389`
-- Bind DN : `CN=svc-nextcloud,CN=Users,DC=mondomaine,DC=local`
-- Base DN users : `CN=Users,DC=mondomaine,DC=local`
-- Mode : `Active Directory (memberOf)`
-
-**Correspondance groupe → stockage :**
-
-| Groupe AD | Groupe NC | Partage SMB | Résultat |
-|-----------|-----------|-------------|---------|
-| `Compta` | `Compta` | `Compta` | `/Compta` visible par les membres |
-| `RH` | `RH` | `RH` | `/RH` visible par les membres |
-| `ADMIN_NEXTCLOUD` | *(admin)* | *(aucun)* | Droits admin NC |
+---
 
 ## Licence
 
@@ -111,4 +163,4 @@ Les contributions sont les bienvenues ! Voir [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Auteur
 
-**wdebonne** — [wdebonne@hotmail.com](mailto:wdebonne@hotmail.com)
+**wdebonne** — [wdebonne@gmail.com](mailto:wdebonne@gmail.com)

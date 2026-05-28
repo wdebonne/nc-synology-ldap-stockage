@@ -6,6 +6,7 @@ namespace OCA\SynoLDAP\Controller;
 use OCA\SynoLDAP\Service\GroupSyncService;
 use OCA\SynoLDAP\Service\LdapService;
 use OCA\SynoLDAP\Service\StorageConfigService;
+use OCA\SynoLDAP\Service\SynologyApiService;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http\Attribute\AdminRequired;
 use OCP\AppFramework\Http\Attribute\NoCSRFRequired;
@@ -33,6 +34,10 @@ class AdminController extends Controller {
         'synology_host',
         'synology_smb_user',
         'synology_smb_domain',
+        // API DSM
+        'synology_api_port',
+        'synology_api_ssl',
+        'synology_api_user',
     ];
 
     public function __construct(
@@ -41,6 +46,7 @@ class AdminController extends Controller {
         private LdapService $ldapService,
         private GroupSyncService $groupSyncService,
         private StorageConfigService $storageConfigService,
+        private SynologyApiService $synoApiService,
     ) {
         parent::__construct(self::APP_ID, $request);
     }
@@ -60,9 +66,10 @@ class AdminController extends Controller {
             $this->config->getAppValue(self::APP_ID, 'group_mappings', '[]'),
             true
         ) ?? [];
-        // Passwords sont toujours masqués en lecture
-        $data['ldap_bind_password']     = '';
-        $data['synology_smb_password']  = '';
+        // Mots de passe toujours masqués en lecture
+        $data['ldap_bind_password']      = '';
+        $data['synology_smb_password']   = '';
+        $data['synology_api_password']   = '';
 
         return new JSONResponse($data);
     }
@@ -80,15 +87,16 @@ class AdminController extends Controller {
             }
         }
 
-        // Mots de passe : sauvegarder uniquement si fournis
         if (!empty($params['ldap_bind_password'])) {
             $this->config->setAppValue(self::APP_ID, 'ldap_bind_password', $params['ldap_bind_password']);
         }
         if (!empty($params['synology_smb_password'])) {
             $this->config->setAppValue(self::APP_ID, 'synology_smb_password', $params['synology_smb_password']);
         }
+        if (!empty($params['synology_api_password'])) {
+            $this->config->setAppValue(self::APP_ID, 'synology_api_password', $params['synology_api_password']);
+        }
 
-        // Correspondances de groupes
         if (array_key_exists('group_mappings', $params)) {
             $mappings = is_string($params['group_mappings'])
                 ? json_decode($params['group_mappings'], true)
@@ -111,11 +119,53 @@ class AdminController extends Controller {
      * @AdminRequired
      */
     #[AdminRequired]
+    public function testDsmApi(): JSONResponse {
+        return new JSONResponse($this->synoApiService->testConnection());
+    }
+
+    /**
+     * Prévisualise les mappings ACL découverts sur un partage Synology.
+     * Résultat : ['Compta' => ['Responsable', 'Compta'], 'RH' => ['RH'], ...]
+     *
+     * @AdminRequired
+     * @NoCSRFRequired
+     */
+    #[AdminRequired]
+    #[NoCSRFRequired]
+    public function discoverAcl(): JSONResponse {
+        $share = trim($this->request->getParam('share', ''));
+        if (empty($share)) {
+            return new JSONResponse(['success' => false, 'message' => 'Paramètre "share" manquant.']);
+        }
+
+        try {
+            $mappings = $this->synoApiService->discoverAclMappings($share);
+            return new JSONResponse(['success' => true, 'mappings' => $mappings]);
+        } catch (\Throwable $e) {
+            return new JSONResponse(['success' => false, 'message' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Vide le cache ACL (à utiliser après modification des droits sur Synology).
+     *
+     * @AdminRequired
+     */
+    #[AdminRequired]
+    public function clearAclCache(): JSONResponse {
+        $this->synoApiService->clearAclCache();
+        return new JSONResponse(['success' => true, 'message' => 'Cache ACL vidé. Les droits seront relus depuis Synology.']);
+    }
+
+    /**
+     * @AdminRequired
+     */
+    #[AdminRequired]
     public function syncAll(): JSONResponse {
         $results = $this->groupSyncService->syncAllUsers();
         $message = "Synchronisation terminée : {$results['synced']} utilisateur(s) synchronisé(s)";
         if ($results['skipped'] > 0) {
-            $message .= ", {$results['skipped']} ignoré(s) (non présents dans Nextcloud)";
+            $message .= ", {$results['skipped']} ignoré(s)";
         }
         if (!empty($results['errors'])) {
             $message .= ", " . count($results['errors']) . " erreur(s)";
@@ -163,17 +213,19 @@ class AdminController extends Controller {
 
     private function getDefault(string $key): string {
         return match ($key) {
-            'ldap_port'             => '389',
-            'ldap_tls'              => '0',
-            'ldap_user_attr'        => 'sAMAccountName',
-            'ldap_user_object_class'=> 'user',
-            'ldap_group_filter'     => 'group',
-            'ldap_member_attr'      => 'member',
-            'ldap_group_name_attr'  => 'cn',
-            'ldap_membership_mode'  => 'memberof',
-            'admin_ldap_group'      => 'ADMIN_NEXTCLOUD',
-            'synology_smb_domain'   => 'WORKGROUP',
-            default                 => '',
+            'ldap_port'              => '389',
+            'ldap_tls'               => '0',
+            'ldap_user_attr'         => 'sAMAccountName',
+            'ldap_user_object_class' => 'user',
+            'ldap_group_filter'      => 'group',
+            'ldap_member_attr'       => 'member',
+            'ldap_group_name_attr'   => 'cn',
+            'ldap_membership_mode'   => 'memberof',
+            'admin_ldap_group'       => 'ADMIN_NEXTCLOUD',
+            'synology_smb_domain'    => 'WORKGROUP',
+            'synology_api_port'      => '5000',
+            'synology_api_ssl'       => '0',
+            default                  => '',
         };
     }
 }

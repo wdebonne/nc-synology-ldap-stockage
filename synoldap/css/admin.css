@@ -378,6 +378,80 @@
 .synoldap-log-warning { color: #ce9178; }
 .synoldap-log-info    { color: #9cdcfe; }
 
+/* ─── Section label ──────────────────────────────────────────────────────── */
+
+.synoldap-section-label {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--color-main-text, #333);
+    margin: 0 0 10px;
+}
+
+/* ─── Mappings — colonne Mode ────────────────────────────────────────────── */
+
+.col-auto { width: 90px; }
+.col-auto-extra { width: 100px; }
+
+.mode-cell {
+    padding: 4px 6px !important;
+    vertical-align: middle;
+}
+
+.mode-select-input {
+    width: 100% !important;
+    font-size: 11px !important;
+    padding: 4px 6px !important;
+    cursor: pointer;
+}
+
+/* Ligne auto (nom ou ACL) */
+tr.is-auto td {
+    background: var(--color-primary-element-light, #e8f4fd);
+}
+tr.is-auto:hover td {
+    background: var(--color-primary-element-lighter, #d6ecf8);
+}
+
+/* Ligne ACL */
+tr.is-acl td {
+    background: #edf7ed;
+}
+tr.is-acl:hover td {
+    background: #daeeda;
+}
+
+.auto-share-cell {
+    padding: 6px 10px !important;
+}
+
+.auto-row-content {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.auto-share-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-primary, #0082c9);
+    white-space: nowrap;
+}
+
+.auto-share-input {
+    width: 150px !important;
+    flex-shrink: 0;
+}
+
+.auto-hint {
+    font-size: 11px;
+    color: var(--color-text-maxcontrast, #777);
+}
+.auto-hint em {
+    font-style: italic;
+    color: var(--color-primary, #0082c9);
+}
+
 /* Responsive */
 @media (max-width: 600px) {
     .synoldap-form-grid { flex-direction: column; }

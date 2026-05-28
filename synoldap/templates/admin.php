@@ -45,7 +45,7 @@ style('synoldap', 'admin');
                     <label for="ldap_bind_dn">Compte de service (Bind DN)</label>
                     <input type="text" id="ldap_bind_dn" name="ldap_bind_dn"
                            placeholder="CN=nextcloud,CN=Users,DC=domain,DC=local" />
-                    <span class="synoldap-hint">Compte utilisé pour requêter l'AD. Ex : CN=svc-nextcloud,CN=Users,DC=mondomaine,DC=local</span>
+                    <span class="synoldap-hint">Ex : CN=svc-nextcloud,CN=Users,DC=mondomaine,DC=local</span>
                 </div>
                 <div class="synoldap-field">
                     <label for="ldap_bind_password">Mot de passe du compte</label>
@@ -59,13 +59,11 @@ style('synoldap', 'admin');
                     <label for="ldap_user_base_dn">Base DN — Utilisateurs</label>
                     <input type="text" id="ldap_user_base_dn" name="ldap_user_base_dn"
                            placeholder="CN=Users,DC=domain,DC=local" />
-                    <span class="synoldap-hint">L'OU ou CN où se trouvent les comptes utilisateurs</span>
                 </div>
                 <div class="synoldap-field synoldap-field-wide">
                     <label for="ldap_group_base_dn">Base DN — Groupes</label>
                     <input type="text" id="ldap_group_base_dn" name="ldap_group_base_dn"
                            placeholder="CN=Users,DC=domain,DC=local" />
-                    <span class="synoldap-hint">L'OU ou CN où se trouvent les groupes</span>
                 </div>
             </div>
             <div class="synoldap-form-grid">
@@ -98,14 +96,16 @@ style('synoldap', 'admin');
         </div>
     </div>
 
-    <!-- Section 2 : Stockage Synology -->
+    <!-- Section 2 : Stockage Synology + API DSM -->
     <div class="synoldap-card">
         <div class="synoldap-card-header" data-toggle="storage-section">
             <span class="synoldap-card-icon">🗄️</span>
-            <h3>2. Connexion SMB vers le Synology</h3>
+            <h3>2. Connexion Synology (SMB + API DSM)</h3>
             <span class="synoldap-toggle-icon">▼</span>
         </div>
         <div class="synoldap-card-body" id="storage-section">
+
+            <p class="synoldap-section-label">Accès SMB (montage des dossiers)</p>
             <div class="synoldap-form-grid">
                 <div class="synoldap-field">
                     <label for="synology_host">Hôte du Synology (IP ou nom)</label>
@@ -123,13 +123,55 @@ style('synoldap', 'admin');
                     <label for="synology_smb_user">Utilisateur SMB</label>
                     <input type="text" id="synology_smb_user" name="synology_smb_user"
                            placeholder="nextcloud-service" />
-                    <span class="synoldap-hint">Compte service sur le Synology avec accès aux partages</span>
+                    <span class="synoldap-hint">Compte service avec accès aux partages SMB</span>
                 </div>
                 <div class="synoldap-field">
                     <label for="synology_smb_password">Mot de passe SMB</label>
                     <input type="password" id="synology_smb_password" name="synology_smb_password"
                            placeholder="(inchangé si vide)" autocomplete="new-password" />
                 </div>
+            </div>
+
+            <hr class="synoldap-separator" />
+            <p class="synoldap-section-label">
+                API DSM
+                <span class="synoldap-hint" style="font-weight:normal">
+                    — nécessaire pour lire les ACL Synology (mode automatique par ACL)
+                </span>
+            </p>
+            <div class="synoldap-form-grid">
+                <div class="synoldap-field synoldap-field-small">
+                    <label for="synology_api_port">Port DSM</label>
+                    <input type="number" id="synology_api_port" name="synology_api_port"
+                           value="5000" min="1" max="65535" />
+                    <span class="synoldap-hint">HTTP : 5000 / HTTPS : 5001</span>
+                </div>
+                <div class="synoldap-field synoldap-field-checkbox">
+                    <label>
+                        <input type="checkbox" id="synology_api_ssl" name="synology_api_ssl" value="1" />
+                        HTTPS (certificat auto-signé accepté)
+                    </label>
+                </div>
+            </div>
+            <div class="synoldap-form-grid">
+                <div class="synoldap-field">
+                    <label for="synology_api_user">Utilisateur DSM (admin)</label>
+                    <input type="text" id="synology_api_user" name="synology_api_user"
+                           placeholder="admin" />
+                    <span class="synoldap-hint">Compte avec droits admin pour lire les ACL via l'API DSM</span>
+                </div>
+                <div class="synoldap-field">
+                    <label for="synology_api_password">Mot de passe DSM</label>
+                    <input type="password" id="synology_api_password" name="synology_api_password"
+                           placeholder="(inchangé si vide)" autocomplete="new-password" />
+                </div>
+            </div>
+
+            <div class="synoldap-actions">
+                <button id="btn-test-dsm-api" class="synoldap-btn synoldap-btn-secondary">
+                    🔑 Tester l'API DSM
+                </button>
+                <span id="dsm-api-test-result" class="synoldap-inline-result"></span>
             </div>
         </div>
     </div>
@@ -149,13 +191,8 @@ style('synoldap', 'admin');
                            placeholder="ADMIN_NEXTCLOUD" />
                     <span class="synoldap-hint">
                         Les membres de ce groupe AD seront automatiquement administrateurs Nextcloud à la connexion.
-                        Si un membre quitte le groupe AD, il perdra ses droits admin (sauf s'il est le dernier admin).
                     </span>
                 </div>
-            </div>
-            <div class="synoldap-info-box">
-                ℹ️ La promotion/révocation est effectuée à chaque connexion de l'utilisateur.
-                Pour appliquer immédiatement à tous les utilisateurs existants, utilisez <strong>Synchroniser maintenant</strong>.
             </div>
         </div>
     </div>
@@ -170,18 +207,21 @@ style('synoldap', 'admin');
         <div class="synoldap-card-body" id="mappings-section">
             <p class="synoldap-desc">
                 Définissez ici quels groupes AD ont accès à quels partages Synology.
-                Le dossier est monté automatiquement dans Nextcloud pour les membres du groupe correspondant.
+                En mode <strong>ACL auto</strong>, les droits sont lus directement depuis Synology — identique à ce
+                que l'utilisateur voit en montant le NAS sur son PC Windows.
             </p>
 
             <div class="synoldap-table-wrap">
                 <table class="synoldap-table" id="mappings-table">
                     <thead>
                         <tr>
-                            <th>Groupe AD (LDAP)</th>
-                            <th>Groupe Nextcloud</th>
+                            <th class="col-auto" title="Mode : manuel, auto par nom, ou auto par ACL Synology">Mode</th>
+                            <th class="col-manual">Groupe AD (LDAP)</th>
+                            <th class="col-manual">Groupe Nextcloud</th>
                             <th>Partage SMB</th>
-                            <th>Sous-dossier <span class="synoldap-optional">(optionnel)</span></th>
-                            <th>Point de montage</th>
+                            <th class="col-manual">Sous-dossier <span class="synoldap-optional">(opt.)</span></th>
+                            <th class="col-manual">Point de montage</th>
+                            <th class="col-auto-extra">Préfixe NC <span class="synoldap-optional">(opt.)</span></th>
                             <th></th>
                         </tr>
                     </thead>
@@ -195,10 +235,31 @@ style('synoldap', 'admin');
                 ＋ Ajouter une correspondance
             </button>
 
-            <div class="synoldap-info-box">
-                ℹ️ Après avoir sauvegardé, cliquez sur <strong>Appliquer les montages</strong> pour créer
-                les stockages externes dans Nextcloud. L'application <em>Files_External</em> doit être activée.
+            <div class="synoldap-info-box" id="acl-info-box">
+                ℹ️ <strong>Mode ACL :</strong> les droits sont lus depuis l'API DSM Synology (SYNO.Core.ACL).
+                Les montages sont créés automatiquement à la connexion de chaque utilisateur selon ses groupes AD.
+                Un <strong>préfixe</strong> (ex. <code>NAS</code>) reproduit la même arborescence que le lecteur réseau Windows :
+                l'utilisateur voit <em>/NAS/Compta/2026</em> dans Nextcloud comme sur son PC.
+                <br>
+                <button id="btn-clear-acl-cache" class="synoldap-btn-link" style="margin-top:6px">
+                    🗑️ Vider le cache ACL (forcer la relecture des droits Synology)
+                </button>
             </div>
+        </div>
+    </div>
+
+    <!-- Aperçu ACL -->
+    <div id="acl-preview-card" class="synoldap-card" style="display:none">
+        <div class="synoldap-card-header" data-toggle="acl-preview-section">
+            <span class="synoldap-card-icon">🔍</span>
+            <h3>Aperçu des ACL découvertes</h3>
+            <span class="synoldap-toggle-icon">▼</span>
+        </div>
+        <div class="synoldap-card-body" id="acl-preview-section">
+            <p class="synoldap-desc">
+                Droits lus depuis Synology. Chaque ligne = un sous-dossier du partage et les groupes AD qui y ont accès en lecture.
+            </p>
+            <div id="acl-preview-content"></div>
         </div>
     </div>
 
@@ -210,6 +271,9 @@ style('synoldap', 'admin');
             </button>
             <button id="btn-apply-storage" class="synoldap-btn synoldap-btn-secondary">
                 🔗 Appliquer les montages stockage
+            </button>
+            <button id="btn-preview-acl" class="synoldap-btn synoldap-btn-secondary">
+                🔍 Prévisualiser les ACL
             </button>
             <button id="btn-sync-all" class="synoldap-btn synoldap-btn-warning">
                 🔄 Synchroniser tous les utilisateurs maintenant
