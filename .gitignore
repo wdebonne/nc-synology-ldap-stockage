@@ -1,3 +1,6 @@
+# Claude Code
+.claude/
+
 # Nextcloud app
 vendor/
 node_modules/
