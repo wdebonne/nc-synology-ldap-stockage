@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<info xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="https://apps.nextcloud.com/schema/apps/info.xsd">
+    <id>synoldap</id>
+    <name>Synology LDAP Manager</name>
+    <summary>Gestion automatique LDAP/AD Synology avec stockage externe par groupe</summary>
+    <description><![CDATA[
+Synchronise automatiquement les groupes Active Directory Synology avec Nextcloud.
+
+Fonctionnalités :
+- Synchronisation automatique des groupes AD → groupes Nextcloud à chaque connexion
+- Promotion automatique en administrateur Nextcloud via groupe AD configurable
+- Montage automatique du stockage externe Synology (SMB) par groupe
+- Interface d'administration visuelle et intuitive
+- Synchronisation manuelle de tous les utilisateurs en un clic
+    ]]></description>
+    <version>1.0.0</version>
+    <licence>agpl</licence>
+    <author>Admin</author>
+    <namespace>SynoLDAP</namespace>
+    <category>integration</category>
+    <dependencies>
+        <nextcloud min-version="25" max-version="30"/>
+        <php min-version="8.0"/>
+    </dependencies>
+    <settings>
+        <admin-section>OCA\SynoLDAP\Settings\AdminSection</admin-section>
+        <admin>OCA\SynoLDAP\Settings\AdminSettings</admin>
+    </settings>
+</info>

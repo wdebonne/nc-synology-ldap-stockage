@@ -1,0 +1,387 @@
+/* ─── SynoLDAP Admin Panel ──────────────────────────────────────────────── */
+
+#synoldap-admin {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 0 0 60px;
+    font-size: 14px;
+}
+
+/* Header */
+.synoldap-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 24px 0 8px;
+    border-bottom: 1px solid var(--color-border, #ddd);
+    margin-bottom: 24px;
+}
+.synoldap-logo {
+    width: 48px;
+    height: 48px;
+    opacity: 0.85;
+}
+.synoldap-header h2 {
+    margin: 0 0 4px;
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--color-main-text, #222);
+}
+.synoldap-header p {
+    margin: 0;
+    color: var(--color-text-maxcontrast, #666);
+    font-size: 13px;
+}
+
+/* Status bar */
+.synoldap-status {
+    padding: 10px 16px;
+    border-radius: 6px;
+    margin-bottom: 16px;
+    font-weight: 500;
+    border-left: 4px solid;
+}
+.synoldap-status-info    { background: var(--color-primary-element-light, #e8f4fd); border-color: var(--color-primary, #0082c9); color: var(--color-primary, #0082c9); }
+.synoldap-status-success { background: #edf7ed; border-color: #4caf50; color: #2e7d32; }
+.synoldap-status-warning { background: #fff8e1; border-color: #ff9800; color: #e65100; }
+.synoldap-status-error   { background: #fdecea; border-color: #f44336; color: #b71c1c; }
+
+/* Cards */
+.synoldap-card {
+    background: var(--color-main-background, #fff);
+    border: 1px solid var(--color-border, #ddd);
+    border-radius: 8px;
+    margin-bottom: 16px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+}
+.synoldap-card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 20px;
+    background: var(--color-background-dark, #f8f8f8);
+    cursor: pointer;
+    user-select: none;
+    border-bottom: 1px solid var(--color-border, #ddd);
+    transition: background 0.15s;
+}
+.synoldap-card-header:hover {
+    background: var(--color-background-hover, #efefef);
+}
+.synoldap-card-header h3 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    flex: 1;
+    color: var(--color-main-text, #222);
+}
+.synoldap-card-icon { font-size: 18px; }
+.synoldap-toggle-icon { color: var(--color-text-maxcontrast, #888); font-size: 12px; }
+
+.synoldap-card-body {
+    padding: 20px;
+}
+
+.synoldap-actions-card {
+    border: none;
+    background: transparent;
+    box-shadow: none;
+}
+.synoldap-actions-card .synoldap-card-body {
+    padding: 4px 0;
+}
+
+/* Form grid */
+.synoldap-form-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+.synoldap-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+    min-width: 200px;
+}
+.synoldap-field-wide  { flex: 2; min-width: 300px; }
+.synoldap-field-small { flex: 0 0 100px; min-width: 80px; }
+.synoldap-field-checkbox {
+    justify-content: flex-end;
+    padding-bottom: 4px;
+}
+.synoldap-field label {
+    font-weight: 500;
+    font-size: 13px;
+    color: var(--color-text-maxcontrast, #555);
+}
+.synoldap-field input[type="text"],
+.synoldap-field input[type="number"],
+.synoldap-field input[type="password"],
+.synoldap-field select {
+    padding: 8px 10px;
+    border: 1px solid var(--color-border-dark, #ccc);
+    border-radius: 5px;
+    font-size: 13px;
+    background: var(--color-main-background, #fff);
+    color: var(--color-main-text, #222);
+    transition: border-color 0.15s;
+    width: 100%;
+    box-sizing: border-box;
+}
+.synoldap-field input:focus,
+.synoldap-field select:focus {
+    outline: none;
+    border-color: var(--color-primary, #0082c9);
+    box-shadow: 0 0 0 2px rgba(0,130,201,.15);
+}
+.synoldap-field input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    margin-right: 6px;
+    cursor: pointer;
+}
+.synoldap-field-checkbox label {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    font-weight: normal;
+    color: var(--color-main-text, #333);
+}
+.synoldap-hint {
+    font-size: 11px;
+    color: var(--color-text-maxcontrast, #888);
+    line-height: 1.4;
+}
+.synoldap-separator {
+    border: none;
+    border-top: 1px solid var(--color-border, #e0e0e0);
+    margin: 8px 0 16px;
+}
+
+/* Buttons */
+.synoldap-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 9px 18px;
+    border-radius: 5px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: background 0.15s, opacity 0.15s;
+    white-space: nowrap;
+}
+.synoldap-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.synoldap-btn-primary {
+    background: var(--color-primary, #0082c9);
+    color: #fff;
+    border-color: var(--color-primary, #0082c9);
+}
+.synoldap-btn-primary:hover:not(:disabled) {
+    background: var(--color-primary-hover, #0069a3);
+}
+.synoldap-btn-secondary {
+    background: var(--color-main-background, #fff);
+    color: var(--color-primary, #0082c9);
+    border-color: var(--color-primary, #0082c9);
+}
+.synoldap-btn-secondary:hover:not(:disabled) {
+    background: var(--color-primary-element-light, #e8f4fd);
+}
+.synoldap-btn-warning {
+    background: #ff9800;
+    color: #fff;
+    border-color: #f57c00;
+}
+.synoldap-btn-warning:hover:not(:disabled) {
+    background: #f57c00;
+}
+.synoldap-btn-ghost {
+    background: transparent;
+    color: var(--color-primary, #0082c9);
+    border: 1px dashed var(--color-border-dark, #aaa);
+    margin-top: 8px;
+}
+.synoldap-btn-ghost:hover {
+    border-color: var(--color-primary, #0082c9);
+    background: var(--color-primary-element-light, #e8f4fd);
+}
+.synoldap-btn-remove {
+    background: transparent;
+    border: none;
+    color: var(--color-error, #e9322d);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    opacity: 0.7;
+    transition: opacity 0.15s, background 0.15s;
+}
+.synoldap-btn-remove:hover {
+    opacity: 1;
+    background: #fdecea;
+}
+.synoldap-btn-link {
+    background: transparent;
+    border: none;
+    color: var(--color-text-maxcontrast, #888);
+    cursor: pointer;
+    font-size: 12px;
+    text-decoration: underline;
+    padding: 0;
+}
+
+/* Actions row */
+.synoldap-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 8px;
+}
+.synoldap-actions-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+}
+
+/* Inline result */
+.synoldap-inline-result {
+    font-size: 13px;
+    font-weight: 500;
+}
+.synoldap-ok  { color: #2e7d32; }
+.synoldap-err { color: #b71c1c; }
+
+/* Groups preview */
+.synoldap-groups-preview {
+    margin-top: 12px;
+    padding: 12px;
+    background: var(--color-background-dark, #f8f8f8);
+    border-radius: 6px;
+    border: 1px solid var(--color-border, #ddd);
+}
+.synoldap-groups-preview strong { font-size: 12px; display: block; margin-bottom: 8px; }
+.synoldap-tag-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.synoldap-tag {
+    display: inline-block;
+    padding: 3px 10px;
+    background: var(--color-primary-element-light, #e8f4fd);
+    color: var(--color-primary, #0082c9);
+    border-radius: 12px;
+    font-size: 12px;
+    cursor: pointer;
+    border: 1px solid var(--color-primary-element-lighter, #c3e0f5);
+    transition: background 0.15s;
+}
+.synoldap-tag:hover { background: var(--color-primary-element, #b3d9f5); }
+
+/* Mappings table */
+.synoldap-table-wrap {
+    overflow-x: auto;
+    margin-bottom: 8px;
+}
+.synoldap-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+.synoldap-table th {
+    text-align: left;
+    padding: 8px 10px;
+    background: var(--color-background-dark, #f5f5f5);
+    border-bottom: 2px solid var(--color-border-dark, #ccc);
+    font-weight: 600;
+    white-space: nowrap;
+    color: var(--color-text-maxcontrast, #555);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+}
+.synoldap-table td {
+    padding: 6px 6px;
+    border-bottom: 1px solid var(--color-border, #eee);
+    vertical-align: middle;
+}
+.synoldap-table tr:last-child td { border-bottom: none; }
+.synoldap-table tr:hover td { background: var(--color-background-dark, #fafafa); }
+
+.synoldap-table-input {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid var(--color-border-dark, #ccc);
+    border-radius: 4px;
+    font-size: 12px;
+    background: var(--color-main-background, #fff);
+    box-sizing: border-box;
+}
+.synoldap-table-input:focus {
+    outline: none;
+    border-color: var(--color-primary, #0082c9);
+}
+.synoldap-optional { font-weight: normal; color: #aaa; font-size: 11px; }
+
+/* Info box */
+.synoldap-info-box {
+    margin-top: 12px;
+    padding: 10px 14px;
+    background: var(--color-primary-element-light, #e8f4fd);
+    border-radius: 5px;
+    font-size: 12px;
+    color: var(--color-main-text, #333);
+    border-left: 3px solid var(--color-primary, #0082c9);
+}
+
+.synoldap-desc {
+    margin: 0 0 12px;
+    color: var(--color-text-maxcontrast, #666);
+    font-size: 13px;
+}
+
+/* Log */
+.synoldap-log {
+    margin-top: 20px;
+    border: 1px solid var(--color-border, #ddd);
+    border-radius: 6px;
+    overflow: hidden;
+    font-family: monospace;
+    font-size: 12px;
+}
+.synoldap-log-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 14px;
+    background: var(--color-background-dark, #f0f0f0);
+    font-weight: 600;
+    font-size: 12px;
+    border-bottom: 1px solid var(--color-border, #ddd);
+}
+#synoldap-log-content {
+    padding: 10px 14px;
+    max-height: 300px;
+    overflow-y: auto;
+    background: #1e1e1e;
+    color: #d4d4d4;
+}
+.synoldap-log-line {
+    padding: 2px 0;
+    line-height: 1.5;
+}
+.synoldap-log-success { color: #4ec94e; }
+.synoldap-log-error   { color: #f48771; }
+.synoldap-log-warning { color: #ce9178; }
+.synoldap-log-info    { color: #9cdcfe; }
+
+/* Responsive */
+@media (max-width: 600px) {
+    .synoldap-form-grid { flex-direction: column; }
+    .synoldap-field-wide, .synoldap-field-small { flex: 1; min-width: 100%; }
+    .synoldap-actions-row { flex-direction: column; align-items: stretch; }
+    .synoldap-btn { justify-content: center; }
+}
