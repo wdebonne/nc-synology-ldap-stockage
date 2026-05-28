@@ -134,7 +134,7 @@ class LdapUserBackend extends ABackend implements
      * Ce backend est en lecture seule : la création/suppression d'utilisateurs
      * se fait sur le Synology, pas dans Nextcloud.
      */
-    public function deleteUser(string $uid): bool {
+    public function deleteUser($uid): bool {
         return false;
     }
 }
