@@ -23,8 +23,9 @@ Fonctionnalités v2.0 :
     <namespace>SynoLDAP</namespace>
     <category>integration</category>
     <dependencies>
-        <nextcloud min-version="25" max-version="30"/>
-        <php min-version="8.0"/>
+        <nextcloud min-version="25" max-version="33"/>
+        <php min-version="8.1"/>
+        <lib>ldap</lib>
     </dependencies>
     <settings>
         <admin-section>OCA\SynoLDAP\Settings\AdminSection</admin-section>
