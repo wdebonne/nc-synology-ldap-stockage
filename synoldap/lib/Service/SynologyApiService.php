@@ -48,25 +48,27 @@ class SynologyApiService {
         }
         $url = $base . '/entry.cgi?' . http_build_query($query);
 
-        if (!ini_get('allow_url_fopen')) {
-            throw new \RuntimeException("allow_url_fopen est désactivé dans PHP — impossible d'appeler l'API DSM via file_get_contents");
+        if (!function_exists('curl_init')) {
+            throw new \RuntimeException("L'extension PHP curl est requise mais non disponible");
         }
 
-        $ctx = stream_context_create([
-            'http' => ['timeout' => 10, 'ignore_errors' => true],
-            'ssl'  => ['verify_peer' => false, 'verify_peer_name' => false],
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 10,
+            CURLOPT_CONNECTTIMEOUT => 5,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => 0,
+            CURLOPT_FOLLOWLOCATION => false,
         ]);
 
-        error_clear_last();
-        $raw = @file_get_contents($url, false, $ctx);
-        if ($raw === false) {
-            $lastError = error_get_last();
-            $detail = '';
-            if ($lastError) {
-                // Extraire le message utile après "file_get_contents(): "
-                $detail = ': ' . preg_replace('/^.*?failed to open stream: /i', '', $lastError['message']);
-            }
-            throw new \RuntimeException("Impossible de joindre l'API Synology DSM ({$base}){$detail}");
+        $raw    = curl_exec($ch);
+        $errno  = curl_errno($ch);
+        $errmsg = curl_error($ch);
+        curl_close($ch);
+
+        if ($raw === false || $errno !== CURLE_OK) {
+            throw new \RuntimeException("Impossible de joindre l'API Synology DSM ({$base}) : {$errmsg} (curl #{$errno})");
         }
 
         $data = json_decode($raw, true);
