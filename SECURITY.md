@@ -18,7 +18,7 @@ Incluez :
 - Les étapes pour la reproduire
 - L'impact potentiel
 
-Vous recevrez une réponse sous 48h et un correctif sera publié dès que possible.
+Vous recevrez une réponse sous 48h (normalement) et un correctif sera publié dès que possible.
 
 ---
 
