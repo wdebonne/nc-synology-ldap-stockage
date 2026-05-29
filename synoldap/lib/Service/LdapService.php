@@ -29,7 +29,12 @@ class LdapService {
         }
 
         $scheme = $useTls ? 'ldaps' : 'ldap';
-        $conn   = @ldap_connect("{$scheme}://{$host}:{$port}");
+
+        if ($useTls) {
+            ldap_set_option(null, LDAP_OPT_X_TLS_REQUIRE_CERT, LDAP_OPT_X_TLS_NEVER);
+        }
+
+        $conn = @ldap_connect("{$scheme}://{$host}:{$port}");
 
         if (!$conn) {
             throw new \RuntimeException("Connexion LDAP impossible vers {$scheme}://{$host}:{$port}");
@@ -67,6 +72,10 @@ class LdapService {
         $port   = (int) $this->config->getAppValue(self::APP_ID, 'ldap_port', '389');
         $useTls = $this->config->getAppValue(self::APP_ID, 'ldap_tls', '0') === '1';
         $scheme = $useTls ? 'ldaps' : 'ldap';
+
+        if ($useTls) {
+            ldap_set_option(null, LDAP_OPT_X_TLS_REQUIRE_CERT, LDAP_OPT_X_TLS_NEVER);
+        }
 
         $conn = @ldap_connect("{$scheme}://{$host}:{$port}");
         if (!$conn) {
