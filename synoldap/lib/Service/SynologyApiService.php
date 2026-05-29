@@ -48,15 +48,27 @@ class SynologyApiService {
         }
         $url = $base . '/entry.cgi?' . http_build_query($query);
 
-        $ssl = $this->config->getAppValue(self::APP_ID, 'synology_api_ssl', '0') === '1';
-        $ctx = stream_context_create([
-            'http' => ['timeout' => 10, 'ignore_errors' => true],
-            'ssl'  => ['verify_peer' => $ssl, 'verify_peer_name' => $ssl],
+        if (!function_exists('curl_init')) {
+            throw new \RuntimeException("L'extension PHP curl est requise mais non disponible");
+        }
+
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 10,
+            CURLOPT_CONNECTTIMEOUT => 5,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => 0,
+            CURLOPT_FOLLOWLOCATION => false,
         ]);
 
-        $raw = @file_get_contents($url, false, $ctx);
-        if ($raw === false) {
-            throw new \RuntimeException("Impossible de joindre l'API Synology DSM ({$base})");
+        $raw    = curl_exec($ch);
+        $errno  = curl_errno($ch);
+        $errmsg = curl_error($ch);
+        curl_close($ch);
+
+        if ($raw === false || $errno !== CURLE_OK) {
+            throw new \RuntimeException("Impossible de joindre l'API Synology DSM ({$base}) : {$errmsg} (curl #{$errno})");
         }
 
         $data = json_decode($raw, true);
