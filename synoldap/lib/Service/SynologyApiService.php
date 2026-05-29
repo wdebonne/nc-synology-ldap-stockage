@@ -48,15 +48,25 @@ class SynologyApiService {
         }
         $url = $base . '/entry.cgi?' . http_build_query($query);
 
-        $ssl = $this->config->getAppValue(self::APP_ID, 'synology_api_ssl', '0') === '1';
+        if (!ini_get('allow_url_fopen')) {
+            throw new \RuntimeException("allow_url_fopen est désactivé dans PHP — impossible d'appeler l'API DSM via file_get_contents");
+        }
+
         $ctx = stream_context_create([
             'http' => ['timeout' => 10, 'ignore_errors' => true],
-            'ssl'  => ['verify_peer' => $ssl, 'verify_peer_name' => $ssl],
+            'ssl'  => ['verify_peer' => false, 'verify_peer_name' => false],
         ]);
 
+        error_clear_last();
         $raw = @file_get_contents($url, false, $ctx);
         if ($raw === false) {
-            throw new \RuntimeException("Impossible de joindre l'API Synology DSM ({$base})");
+            $lastError = error_get_last();
+            $detail = '';
+            if ($lastError) {
+                // Extraire le message utile après "file_get_contents(): "
+                $detail = ': ' . preg_replace('/^.*?failed to open stream: /i', '', $lastError['message']);
+            }
+            throw new \RuntimeException("Impossible de joindre l'API Synology DSM ({$base}){$detail}");
         }
 
         $data = json_decode($raw, true);
