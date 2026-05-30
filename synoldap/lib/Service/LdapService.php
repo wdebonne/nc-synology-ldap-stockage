@@ -311,15 +311,23 @@ class LdapService {
         }
 
         // Exclure les comptes désactivés (userAccountControl bit 2)
-        $baseFilter = "(&(objectClass={$userObjClass})(!(userAccountControl:1.2.840.113556.1.4.803:=2)))";
+        $strictFilter   = "(&(objectClass={$userObjClass})(!(userAccountControl:1.2.840.113556.1.4.803:=2)))";
+        $fallbackFilter = "(objectClass={$userObjClass})";
 
         if (!empty($search)) {
             $esc = ldap_escape($search, '', LDAP_ESCAPE_FILTER);
-            $baseFilter = "(&{$baseFilter}({$userNameAttr}=*{$esc}*))";
+            $searchPart   = "({$userNameAttr}=*{$esc}*)";
+            $strictFilter   = "(&{$strictFilter}{$searchPart})";
+            $fallbackFilter = "(&{$fallbackFilter}{$searchPart})";
         }
 
         $sizelimit = $limit !== null ? (int)$limit + (int)($offset ?? 0) : 1000;
-        $result    = @ldap_search($conn, $userBaseDn, $baseFilter, [$userNameAttr], 0, $sizelimit);
+        $result    = @ldap_search($conn, $userBaseDn, $strictFilter, [$userNameAttr], 0, $sizelimit);
+
+        // Samba 4 ne supporte pas toujours le filtre OID userAccountControl — fallback sans
+        if (!$result) {
+            $result = @ldap_search($conn, $userBaseDn, $fallbackFilter, [$userNameAttr], 0, $sizelimit);
+        }
 
         if (!$result) {
             ldap_unbind($conn);

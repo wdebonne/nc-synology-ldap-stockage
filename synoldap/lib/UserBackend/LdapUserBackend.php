@@ -139,6 +139,6 @@ class LdapUserBackend extends ABackend implements
     }
 
     public function deleteUser($uid): bool {
-        return false;
+        return true;
     }
 }
