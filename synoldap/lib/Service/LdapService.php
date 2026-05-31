@@ -324,8 +324,10 @@ class LdapService {
         $sizelimit = $limit !== null ? (int)$limit + (int)($offset ?? 0) : 1000;
         $result    = @ldap_search($conn, $userBaseDn, $strictFilter, [$userNameAttr], 0, $sizelimit);
 
-        // Samba 4 ne supporte pas toujours le filtre OID userAccountControl — fallback sans
-        if (!$result) {
+        // Samba 4 peut retourner un résultat vide (count=0) au lieu de false pour
+        // le filtre OID userAccountControl non supporté — fallback dans les deux cas.
+        $isEmpty = !$result || ldap_count_entries($conn, $result) === 0;
+        if ($isEmpty) {
             $result = @ldap_search($conn, $userBaseDn, $fallbackFilter, [$userNameAttr], 0, $sizelimit);
         }
 
