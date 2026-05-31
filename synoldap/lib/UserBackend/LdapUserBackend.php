@@ -4,6 +4,8 @@ declare(strict_types=1);
 namespace OCA\SynoLDAP\UserBackend;
 
 use OCA\SynoLDAP\Service\LdapService;
+use OCP\ICache;
+use OCP\ICacheFactory;
 use OCP\User\Backend\ABackend;
 use OCP\User\Backend\ICheckPasswordBackend;
 use OCP\User\Backend\ICountUsersBackend;
@@ -27,10 +29,17 @@ class LdapUserBackend extends ABackend implements
     IGetDisplayNameBackend,
     ICountUsersBackend
 {
+    // Cache d'authentification : évite les appels LDAP répétés lors de la re-validation
+    // de session par NC (checkTokenCredentials toutes les 5 minutes).
+    private ICache $authCache;
+
     public function __construct(
         private LdapService $ldapService,
         private LoggerInterface $logger,
-    ) {}
+        ICacheFactory $cacheFactory,
+    ) {
+        $this->authCache = $cacheFactory->createDistributed('synoldap_auth_');
+    }
 
     public function getBackendName(): string {
         return 'SynoLDAP';
@@ -49,9 +58,18 @@ class LdapUserBackend extends ABackend implements
             return false;
         }
 
+        // Vérifier le cache avant tout appel LDAP (NC re-valide toutes les 5 minutes).
+        $cacheKey = hash('sha256', $loginName . ':' . $password);
+        $cachedUid = $this->authCache->get($cacheKey);
+        if ($cachedUid !== null) {
+            return $cachedUid;
+        }
+
         try {
             $uid = $this->ldapService->authenticate($loginName, $password);
             if ($uid !== null) {
+                // Cache pendant 360s (légèrement > fenêtre 5 min de NC).
+                $this->authCache->set($cacheKey, $uid, 360);
                 return $uid;
             }
         } catch (\Throwable $e) {
