@@ -35,6 +35,25 @@ sudo -u www-data php /var/www/nextcloud/occ user:resetpassword --no-interaction 
    ```
    Les messages `[SynoLDAP] Utilisateur introuvable` vs `Mot de passe incorrect` permettent de distinguer les deux causes d'échec.
 
+### Lire les logs pour comprendre l'échec exact
+
+Depuis la v2.0.2, l'erreur LDAP réelle est journalisée. Après une tentative de connexion :
+
+```bash
+tail -50 /var/www/nextcloud/data/nextcloud.log | grep SynoLDAP
+```
+
+Messages courants et leur signification :
+
+| Message | Cause | Solution |
+|---------|-------|----------|
+| `Utilisateur introuvable dans l'AD` | sAMAccountName absent du Base DN configuré | Élargir le Base DN (ex : `DC=pavilly,DC=int` au lieu de `CN=Users,DC=...`) |
+| `Bind échoué … Invalid credentials` | Mot de passe incorrect dans l'AD | Vérifier le mot de passe côté AD |
+| `Bind échoué … Constraint violation` | Politique de compte AD (compte verrouillé, expiration) | Vérifier le compte dans la console AD |
+| `Bind échoué … Can't contact LDAP server` | Serveur LDAP injoignable lors du bind utilisateur | Vérifier le réseau / firewall |
+
+> **Cas fréquent** : les utilisateurs sont dans une OU personnalisée (`OU=Mairie,DC=...`) mais le Base DN pointe vers `CN=Users,DC=...`. Le compte de service trouve les utilisateurs (qui apparaissent dans la liste) mais le bind utilisateur échoue car `getUserInfo()` ne les retrouve pas avec un Base DN trop restrictif. Mettre le Base DN à la racine du domaine (`DC=pavilly,DC=int`) résout le problème.
+
 ### "Cannot bind to LDAP server"
 
 - Vérifier que le Synology est joignable sur le port configuré (`389` ou `636`)

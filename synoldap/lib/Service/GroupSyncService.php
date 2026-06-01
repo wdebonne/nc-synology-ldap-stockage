@@ -45,11 +45,14 @@ class GroupSyncService {
     }
 
     /**
-     * Synchronise les groupes Nextcloud et le statut admin d'un utilisateur
-     * d'après ses groupes AD au moment de la connexion.
+     * Synchronise le profil (displayName, email) et les groupes Nextcloud d'un utilisateur
+     * d'après l'AD au moment de la connexion.
      */
     public function syncUser(IUser $user): void {
         $uid = $user->getUID();
+
+        // Mettre à jour le nom complet et l'email depuis l'AD
+        $this->syncProfile($user);
 
         try {
             $ldapGroups = $this->ldapService->getUserGroups($uid);
@@ -62,6 +65,28 @@ class GroupSyncService {
 
         $this->syncAdminStatus($user, $ldapGroups);
         $this->syncGroupMemberships($user, $ldapGroups);
+    }
+
+    /**
+     * Pousse le displayName et l'email depuis l'AD vers le compte Nextcloud.
+     * Appelé à chaque connexion pour maintenir le profil NC à jour.
+     */
+    private function syncProfile(IUser $user): void {
+        $uid = $user->getUID();
+        try {
+            $info = $this->ldapService->getUserInfo($uid);
+            if ($info === null) {
+                return;
+            }
+            if (!empty($info['displayName']) && $info['displayName'] !== $uid) {
+                $user->setDisplayName($info['displayName']);
+            }
+            if (!empty($info['email'])) {
+                $user->setEMailAddress($info['email']);
+            }
+        } catch (\Throwable $e) {
+            $this->logger->warning("[SynoLDAP] Impossible de synchroniser le profil pour {$uid}: " . $e->getMessage());
+        }
     }
 
     private function syncAdminStatus(IUser $user, array $ldapGroups): void {

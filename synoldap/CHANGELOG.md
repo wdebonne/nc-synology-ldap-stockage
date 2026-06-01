@@ -6,7 +6,8 @@
 - **Zéro utilisateurs listés** : PHP retourne les noms d'attributs LDAP en minuscules (`ldap_get_entries`, `ldap_get_attributes`). L'accès via le nom configuré (`sAMAccountName`) retournait toujours `null` → aucun utilisateur n'apparaissait dans la liste, le partage ou le panneau admin. Corrigé avec `strtolower()` dans `getAllUserUids()`, `getUserInfo()` et `getGroupsViaSearch()`.
 - **Login `DOMAIN\username`** : le préfixe domaine Windows est maintenant retiré avant la recherche LDAP (`sAMAccountName` ne contient pas le domaine dans l'AD). Un utilisateur peut désormais se connecter avec `CORP\jdupont` ou `jdupont`.
 - **Login UPN** (`user@domain.com`) : la recherche inclut maintenant aussi `userPrincipalName` lorsque le login contient `@`.
-- **Logs de diagnostic** : `authenticate()` logue maintenant clairement si l'utilisateur est introuvable dans l'AD ou si le mot de passe est incorrect (niveau `debug`).
+- **Erreur de bind masquée** : le `@` sur `ldap_bind()` dans `authenticate()` supprimait le message d'erreur LDAP réel. Supprimé — l'erreur exacte est maintenant journalisée au niveau `warning` (ex : "Invalid credentials", "Constraint violation").
+- **Nom complet et email non synchronisés** : le displayName et l'email de l'AD n'étaient jamais poussés vers le compte Nextcloud. Corrigé via `GroupSyncService::syncProfile()` appelée à chaque connexion.
 
 ---
 

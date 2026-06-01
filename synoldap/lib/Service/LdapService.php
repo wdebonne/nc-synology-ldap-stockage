@@ -140,7 +140,17 @@ class LdapService {
         // 2. Tenter le bind avec les identifiants de l'utilisateur
         $conn = $this->connectRaw();
         try {
-            $bound = @ldap_bind($conn, $info['dn'], $password);
+            // Ne pas supprimer l'erreur avec @ : on veut le code LDAP en cas d'échec
+            $bound = ldap_bind($conn, $info['dn'], $password);
+            if (!$bound) {
+                $this->logger->warning(sprintf(
+                    '[SynoLDAP] Bind échoué pour %s (DN: %s) — erreur LDAP : %s',
+                    $loginName, $info['dn'], ldap_error($conn)
+                ));
+            }
+        } catch (\Throwable $e) {
+            $this->logger->warning("[SynoLDAP] Exception lors du bind pour {$loginName} : " . $e->getMessage());
+            $bound = false;
         } finally {
             ldap_unbind($conn);
         }
@@ -150,7 +160,6 @@ class LdapService {
             return $info['uid'];
         }
 
-        $this->logger->debug("[SynoLDAP] Mot de passe incorrect pour : {$loginName}");
         return null;
     }
 

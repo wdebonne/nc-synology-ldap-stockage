@@ -15,7 +15,8 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 - **Bug critique — zéro utilisateur listé** : PHP retourne les noms d'attributs LDAP en minuscules (`ldap_get_entries()`, `ldap_get_attributes()`). Dans `getAllUserUids()`, l'accès à `$entries[$i]['sAMAccountName']` était toujours `null` → la liste d'utilisateurs, le partage de fichiers et le panneau admin ne montraient aucun utilisateur LDAP. Corrigé avec `strtolower($userNameAttr)` dans `getAllUserUids()`, `getUserInfo()` et `getGroupsViaSearch()`.
 - **Login avec préfixe domaine Windows** (`DOMAIN\username`) : `sAMAccountName` ne contient pas le préfixe domaine dans l'AD. Le login `CORP\jdupont` échouait avec "utilisateur introuvable". Corrigé par la méthode privée `LdapService::stripDomainPrefix()`.
 - **Login au format UPN** (`utilisateur@domaine.com`) : la recherche inclut maintenant aussi `userPrincipalName` quand le login contient `@`. Géré par `LdapService::buildUserSearchFilter()`.
-- **Logs de diagnostic** : `authenticate()` journalise maintenant distinctement "utilisateur introuvable dans l'AD" vs "mot de passe incorrect" (niveau `debug`) pour faciliter le dépannage.
+- **Erreur de bind masquée** : le `@` sur `ldap_bind()` supprimait l'erreur LDAP réelle. Supprimé — l'erreur exacte est maintenant journalisée (`warning`) pour pouvoir diagnostiquer les échecs d'authentification.
+- **Nom complet et email non synchronisés** : `displayName` et `mail` récupérés depuis l'AD n'étaient jamais poussés vers le profil Nextcloud. `GroupSyncService::syncProfile()` est maintenant appelée à chaque connexion pour maintenir le profil NC à jour.
 
 ---
 
