@@ -161,8 +161,9 @@ class GroupSyncService {
 
         // ── Sync directe : groupes AD → groupes NC du même nom ───────────────
         // Tout groupe AD non couvert par un mapping manuel est automatiquement
-        // reflété comme groupe Nextcloud (création si besoin, retrait si l'utilisateur
-        // n'est plus membre dans l'AD).
+        // reflété comme groupe Nextcloud (création si besoin).
+        // Le retrait n'est pas effectué ici (évite N connexions LDAP au login) ;
+        // utiliser "Synchronisation de tous les utilisateurs" pour nettoyer.
         $uid = $user->getUID();
         foreach ($ldapGroups as $ldapGroup) {
             if (in_array($ldapGroup, $mappedLdapGroups, true)) {
@@ -176,22 +177,6 @@ class GroupSyncService {
             if ($ncGroup && !$ncGroup->inGroup($user)) {
                 $ncGroup->addUser($user);
                 $this->logger->info("[SynoLDAP] {$uid} ajouté au groupe AD direct: {$ldapGroup}");
-            }
-        }
-
-        // Retirer l'utilisateur des groupes NC qui portent le nom d'un groupe AD
-        // dont il n'est plus membre (retrait côté AD depuis la dernière sync).
-        $currentNcGroups = $this->groupManager->getUserGroups($user);
-        foreach ($currentNcGroups as $ncGroup) {
-            $gid = $ncGroup->getGID();
-            if (in_array($gid, $mappedLdapGroups, true)) {
-                continue; // géré par le mapping manuel
-            }
-            // Ne retirer que si ce groupe NC porte le nom d'un groupe AD connu
-            // et que l'utilisateur n'y est plus membre dans l'AD.
-            if ($this->ldapService->isKnownLdapGroup($gid) && !in_array($gid, $ldapGroups, true)) {
-                $ncGroup->removeUser($user);
-                $this->logger->info("[SynoLDAP] {$uid} retiré du groupe AD direct (plus membre): {$gid}");
             }
         }
 
