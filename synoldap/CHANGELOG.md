@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.7] - 2026-06-01
+
+### Correction critique
+- **Session détruite immédiatement après login** : chaque méthode LDAP (`getUserInfo`, `getUserGroups`, `getAllUserUids`, `isKnownLdapGroup`) ouvrait et fermait sa propre connexion au compte de service. Lors d'un login, 4-5 connexions s'ouvraient en rafale → le Synology LDAP rejetait la suivante → `userExists()` retournait `false` → Nextcloud loggait "Found one account that was removed from its backend" → session invalidée → redirection vers /login. Corrigé : la connexion du compte de service est maintenant mise en cache dans `$serviceConn` (propriété de classe) et réutilisée pour toute la durée de la requête PHP. Fermée proprement dans `__destruct()`.
+
+---
+
 ## [2.0.4] - 2026-06-01
 
 ### Ajouté

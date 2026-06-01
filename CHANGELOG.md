@@ -7,6 +7,15 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [2.0.7] — 2026-06-01
+
+### Correction critique — Session invalide immédiatement après login
+
+- **Cause** : chaque opération LDAP (`getUserInfo`, `getUserGroups`, `getAllUserUids`) ouvrait une nouvelle connexion TCP au Synology LDAP et la fermait via `ldap_unbind()`. Un login ouvrait 4-5 connexions en rafale. Le Synology Directory Server rejetait la suivante → `userExists()` retournait `false` → Nextcloud loggait `"Found one account that was removed from its backend"` → la session était invalidée → redirection vers `/login` (POST login → 303 dashboard → 303 login).
+- **Fix** : connexion du compte de service mise en cache dans `LdapService::$serviceConn` (propriété d'instance). Comme `LdapService` est un singleton dans le container NC, une seule connexion TCP est ouverte par requête HTTP et réutilisée par toutes les opérations. Fermée proprement dans `__destruct()`.
+
+---
+
 ## [2.0.4] — 2026-06-01
 
 ### Ajouté

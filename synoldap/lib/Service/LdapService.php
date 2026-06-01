@@ -9,17 +9,40 @@ use Psr\Log\LoggerInterface;
 class LdapService {
     private const APP_ID = 'synoldap';
 
+    // Connexion du compte de service mise en cache pour toute la durée de la requête.
+    // LdapService est un singleton dans le container NC — une seule connexion par requête PHP.
+    private ?\LDAP\Connection $serviceConn = null;
+
     public function __construct(
         private IConfig $config,
         private LoggerInterface $logger,
     ) {}
 
+    public function __destruct() {
+        if ($this->serviceConn !== null) {
+            @ldap_unbind($this->serviceConn);
+            $this->serviceConn = null;
+        }
+    }
+
     // ─── Connexion service ────────────────────────────────────────────────────
 
     /**
-     * Ouvre et retourne une connexion LDAP authentifiée avec le compte de service.
+     * Retourne la connexion du compte de service, en la créant si nécessaire.
+     * La connexion est réutilisée pour toutes les opérations de la même requête.
      */
     private function connect(): \LDAP\Connection {
+        if ($this->serviceConn !== null) {
+            return $this->serviceConn;
+        }
+        $this->serviceConn = $this->openServiceConnection();
+        return $this->serviceConn;
+    }
+
+    /**
+     * Ouvre et retourne une nouvelle connexion LDAP authentifiée avec le compte de service.
+     */
+    private function openServiceConnection(): \LDAP\Connection {
         $host   = $this->config->getAppValue(self::APP_ID, 'ldap_host', '');
         $port   = (int) $this->config->getAppValue(self::APP_ID, 'ldap_port', '389');
         $useTls = $this->config->getAppValue(self::APP_ID, 'ldap_tls', '0') === '1';
@@ -245,8 +268,6 @@ class LdapService {
                 'displayName' => $displayName,
                 'email'       => $attrs['mail'][0] ?? '',
             ];
-        } finally {
-            ldap_unbind($conn);
         }
     }
 
@@ -262,14 +283,10 @@ class LdapService {
         $userBaseDn   = $this->config->getAppValue(self::APP_ID, 'ldap_user_base_dn', '');
         $userNameAttr = $this->config->getAppValue(self::APP_ID, 'ldap_user_attr', 'sAMAccountName');
 
-        try {
-            if ($mode === 'memberof') {
-                return $this->getGroupsViaMemberOf($conn, $uid, $userBaseDn, $userNameAttr);
-            }
-            return $this->getGroupsViaSearch($conn, $uid);
-        } finally {
-            ldap_unbind($conn);
+        if ($mode === 'memberof') {
+            return $this->getGroupsViaMemberOf($conn, $uid, $userBaseDn, $userNameAttr);
         }
+        return $this->getGroupsViaSearch($conn, $uid);
     }
 
     private function getGroupsViaMemberOf(
@@ -378,12 +395,10 @@ class LdapService {
         }
 
         if (!$result) {
-            ldap_unbind($conn);
             return [];
         }
 
         $entries = ldap_get_entries($conn, $result);
-        ldap_unbind($conn);
 
         // ldap_get_entries() retourne les noms d'attributs en minuscules
         $lcAttr = strtolower($userNameAttr);
@@ -424,9 +439,7 @@ class LdapService {
             $escaped = ldap_escape($groupName, '', LDAP_ESCAPE_FILTER);
             $filter  = "(&(objectClass={$groupObjClass})(cn={$escaped}))";
             $result  = @ldap_search($conn, $groupBaseDn, $filter, ['cn'], 0, 1);
-            $found   = $result && ldap_count_entries($conn, $result) > 0;
-            ldap_unbind($conn);
-            return $found;
+            return $result && ldap_count_entries($conn, $result) > 0;
         } catch (\Throwable) {
             return false;
         }
@@ -462,8 +475,6 @@ class LdapService {
                     $details .= ' — ' . (int)$entries['count'] . ' groupe(s) trouvé(s)';
                 }
             }
-
-            ldap_unbind($conn);
 
             return ['success' => true, 'message' => $details, 'groups' => $groups];
         } catch (\Throwable $e) {
