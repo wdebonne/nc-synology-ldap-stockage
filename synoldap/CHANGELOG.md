@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.0.3] - 2026-06-01
+
+### Corrections
+- **Nom complet et email absents** : `ldap_get_attributes()` renvoie les attributs avec la casse du serveur (Synology AD : `displayName`, `givenName`, `sAMAccountName`). Le code cherchait en minuscules → toutes les valeurs étaient null → fallback sur l'identifiant. Corrigé : normalisation immédiate de toutes les clés en minuscules (`strtolower`) après `ldap_get_attributes()`.
+- **Logs de profil** : `syncProfile()` journalise maintenant les mises à jour de displayName et d'email (niveau `info`) pour confirmer la synchronisation, ainsi qu'un avertissement si l'utilisateur est introuvable dans l'AD.
+
+---
+
 ## [2.0.2] - 2026-06-01
 
 ### Corrections

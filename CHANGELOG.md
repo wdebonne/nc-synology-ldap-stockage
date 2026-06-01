@@ -7,6 +7,16 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [2.0.3] — 2026-06-01
+
+### Corrigé
+
+#### Nom complet et email non synchronisés malgré `syncProfile()`
+- **`ldap_get_attributes()` ne normalise pas la casse** : contrairement à `ldap_get_entries()` (documenté lowercase), `ldap_get_attributes()` renvoie les attributs avec la casse du serveur. Le Synology AD renvoie `displayName`, `givenName`, `sAMAccountName` (majuscules internes). Le code cherchait `displayname`, `givenname` → null → fallback sur l'identifiant → condition `displayName !== uid` bloquait la mise à jour NC. Corrigé par normalisation via `foreach`/`strtolower` immédiatement après `ldap_get_attributes()`.
+- **Logs de synchronisation de profil** : `syncProfile()` journalise maintenant chaque mise à jour de displayName et email (niveau `info`) et un avertissement si l'utilisateur est introuvable dans l'AD, pour faciliter le diagnostic.
+
+---
+
 ## [2.0.2] — 2026-06-01
 
 ### Corrigé
