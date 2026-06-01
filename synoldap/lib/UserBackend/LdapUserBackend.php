@@ -10,6 +10,7 @@ use OCP\User\Backend\ABackend;
 use OCP\User\Backend\ICheckPasswordBackend;
 use OCP\User\Backend\ICountUsersBackend;
 use OCP\User\Backend\IGetDisplayNameBackend;
+use OCP\User\Backend\IProvideEnabledStateBackend;
 use OCP\UserInterface;
 use Psr\Log\LoggerInterface;
 
@@ -29,7 +30,8 @@ class LdapUserBackend extends ABackend implements
     UserInterface,
     ICheckPasswordBackend,
     IGetDisplayNameBackend,
-    ICountUsersBackend
+    ICountUsersBackend,
+    IProvideEnabledStateBackend
 {
     // Cache d'authentification : évite les appels LDAP répétés lors de la re-validation
     // de session par NC (checkTokenCredentials toutes les 5 minutes).
@@ -178,5 +180,28 @@ class LdapUserBackend extends ABackend implements
 
     public function deleteUser($uid): bool {
         return true;
+    }
+
+    // ─── État du compte ───────────────────────────────────────────────────────
+
+    /**
+     * Un compte est actif si son sAMAccountName existe dans l'AD.
+     * Les comptes désactivés côté Synology échouent au bind LDAP → accès révoqué.
+     * $queryDatabaseValue() retourne l'état stocké dans NC (fallback si l'AD est injoignable).
+     */
+    public function isUserEnabled(string $uid, callable $queryDatabaseValue): bool {
+        try {
+            return $this->userExists($uid);
+        } catch (\Throwable) {
+            return (bool) $queryDatabaseValue();
+        }
+    }
+
+    /**
+     * Lecture seule : c'est l'AD Synology qui contrôle l'état des comptes.
+     * On délègue uniquement la persistance NC (nécessaire pour l'interface).
+     */
+    public function setUserEnabled(string $uid, bool $enabled, callable $setDatabaseValue): void {
+        $setDatabaseValue($enabled);
     }
 }

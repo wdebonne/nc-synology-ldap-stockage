@@ -20,10 +20,6 @@ class UserLoggedInListener implements IEventListener {
             return;
         }
 
-        // TEST DIAGNOSTIC : PostLoginEvent désactivé pour isoler le problème "Se souvenir de moi"
-        // Retirer ce return pour réactiver la synchronisation des groupes au login.
-        return;
-
         $user = $event->getUser();
         try {
             $this->groupSyncService->syncUser($user);
