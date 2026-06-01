@@ -48,11 +48,14 @@ class GroupSyncService {
      * Synchronise le profil (displayName, email) et les groupes Nextcloud d'un utilisateur
      * d'après l'AD au moment de la connexion.
      */
+    /**
+     * Synchronise uniquement les groupes à la connexion.
+     * syncProfile() est volontairement absent ici : appeler setDisplayName/setEMailAddress
+     * pendant le PostLoginEvent interfère avec la création du token "Se souvenir de moi" en NC 33.
+     * La synchronisation du profil se fait via syncAllUsers() (bouton admin).
+     */
     public function syncUser(IUser $user): void {
         $uid = $user->getUID();
-
-        // Mettre à jour le nom complet et l'email depuis l'AD
-        $this->syncProfile($user);
 
         try {
             $ldapGroups = $this->ldapService->getUserGroups($uid);
@@ -295,6 +298,8 @@ class GroupSyncService {
                 continue;
             }
             try {
+                // syncAllUsers met à jour profil + groupes (sans contrainte de timing)
+                $this->syncProfile($user);
                 $this->syncUser($user);
                 $results['synced']++;
             } catch (\Throwable $e) {
