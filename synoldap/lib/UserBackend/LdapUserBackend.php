@@ -207,7 +207,7 @@ class LdapUserBackend extends ABackend implements
     }
 
     /** L'AD Synology gère les comptes désactivés — on retourne une liste vide. */
-    public function getDisabledUserList(?int $limit = null, int $offset = 0): array {
+    public function getDisabledUserList(?int $limit = null, int $offset = 0, string $search = ''): array {
         return [];
     }
 }
