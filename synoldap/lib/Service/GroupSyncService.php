@@ -76,13 +76,16 @@ class GroupSyncService {
         try {
             $info = $this->ldapService->getUserInfo($uid);
             if ($info === null) {
+                $this->logger->warning("[SynoLDAP] syncProfile: {$uid} introuvable dans l'AD");
                 return;
             }
             if (!empty($info['displayName']) && $info['displayName'] !== $uid) {
                 $user->setDisplayName($info['displayName']);
+                $this->logger->info("[SynoLDAP] syncProfile: {$uid} → displayName = \"{$info['displayName']}\"");
             }
             if (!empty($info['email'])) {
                 $user->setEMailAddress($info['email']);
+                $this->logger->info("[SynoLDAP] syncProfile: {$uid} → email = {$info['email']}");
             }
         } catch (\Throwable $e) {
             $this->logger->warning("[SynoLDAP] Impossible de synchroniser le profil pour {$uid}: " . $e->getMessage());
