@@ -17,7 +17,7 @@ Full integration of Synology Active Directory into Nextcloud: authentication, gr
 - Identical Windows / Nextcloud folder structure via Mount Prefix field (/NAS/Accounting, etc.)
 - Visual admin interface with real-time ACL preview
     ]]></description>
-    <version>2.0.20</version>
+    <version>2.0.21</version>
     <licence>agpl</licence>
     <author homepage="https://github.com/wdebonne">wdebonne</author>
     <namespace>SynoLDAP</namespace>
