@@ -56,9 +56,7 @@ class LdapUserBackend extends ABackend implements
      * Un mot de passe vide est toujours refusé (protection contre le bind anonyme LDAP).
      */
     public function checkPassword(string $loginName, string $password): string|false {
-        $this->logger->warning("[SynoLDAP] checkPassword appelé: login={$loginName} pwLen=" . strlen($password));
         if (empty($loginName) || empty($password)) {
-            $this->logger->warning("[SynoLDAP] checkPassword: refusé (login ou mdp vide)");
             return false;
         }
 
