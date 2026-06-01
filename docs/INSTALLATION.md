@@ -49,7 +49,7 @@ sudo -u www-data php /var/www/nextcloud/occ app:enable synoldap
 
 ```bash
 sudo -u www-data php /var/www/nextcloud/occ app:list | grep synoldap
-# Doit afficher : synoldap: 2.0.7
+# Doit afficher : synoldap: 2.0.10
 ```
 
 ---

@@ -178,7 +178,7 @@ class LdapService {
         }
 
         if ($bound) {
-            $this->logger->warning("[SynoLDAP] AUTH OK: {$loginName} → {$info['uid']}");
+            $this->logger->info("[SynoLDAP] Authentification réussie : {$loginName} → {$info['uid']}");
             return $info['uid'];
         }
 

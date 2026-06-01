@@ -7,6 +7,15 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [2.0.10] — 2026-06-01
+
+### Corrections critiques
+
+- **Boucle login (POST ok → GET dashboard → 303 login)** : diagnostiquée par ajout de logs `warning` sur toutes les méthodes du backend. La cause était double : (1) le Synology LDAP rejetait les connexions rapides en rafale (4-5 connexions par login) → `userExists()` échouait silencieusement → session invalidée. Corrigé par mise en cache de `$serviceConn`. (2) L'app `user_ldap` (officielle Nextcloud) interceptait l'auth avant `synoldap` et changeait le backend de session ; solution : désactiver `user_ldap` quand `synoldap` gère le LDAP.
+- **Logging insuffisant** : les échecs de `userExists()` et de `ldap_search` étaient silencieux. Ajout de `warning` pour rendre le diagnostic possible sans activer le niveau debug.
+
+---
+
 ## [2.0.7] — 2026-06-01
 
 ### Correction critique — Session invalide immédiatement après login

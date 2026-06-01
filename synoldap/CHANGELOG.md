@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.0.10] - 2026-06-01
+
+### Corrections
+- **Connexions LDAP multiples → session détruite** : chaque méthode du service LDAP ouvrait et fermait sa propre connexion TCP au compte de service. Lors d'un login, 4-5 connexions s'ouvraient en rafale ; le Synology LDAP rejetait la suivante → `userExists()` échouait silencieusement → Nextcloud invalidait la session → boucle login. Corrigé par mise en cache de la connexion dans `$serviceConn` (propriété de classe), réutilisée pour toute la durée de la requête PHP. Fermée proprement par `__destruct()`.
+- **`user_ldap` en conflit avec `synoldap`** : `user_ldap` (official Nextcloud LDAP) interceptait l'authentification des utilisateurs synoldap et changeait leur backend en session, causant l'invalidation au GET suivant. Solution : désactiver `user_ldap` lorsque `synoldap` gère l'authentification LDAP.
+- **`userExists()` silencieux en cas d'échec** : les exceptions de connexion LDAP étaient avalées sans log, rendant le diagnostic impossible. Ajout de `warning` sur `userExists()` introuvable et sur `ldap_search` échoué.
+
+---
+
 ## [2.0.7] - 2026-06-01
 
 ### Correction critique
