@@ -201,7 +201,8 @@ class LdapUserBackend extends ABackend implements
      * Lecture seule : c'est l'AD Synology qui contrôle l'état des comptes.
      * On délègue uniquement la persistance NC (nécessaire pour l'interface).
      */
-    public function setUserEnabled(string $uid, bool $enabled, callable $setDatabaseValue): void {
+    public function setUserEnabled(string $uid, bool $enabled, callable $queryDatabaseValue, callable $setDatabaseValue): bool {
         $setDatabaseValue($enabled);
+        return $enabled;
     }
 }
