@@ -10,6 +10,7 @@ use OCP\User\Backend\ABackend;
 use OCP\User\Backend\ICheckPasswordBackend;
 use OCP\User\Backend\ICountUsersBackend;
 use OCP\User\Backend\IGetDisplayNameBackend;
+use OCP\UserInterface;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -25,6 +26,7 @@ use Psr\Log\LoggerInterface;
  *  4. Le PostLoginEvent déclenche la synchro des groupes et la création des montages SMB.
  */
 class LdapUserBackend extends ABackend implements
+    UserInterface,
     ICheckPasswordBackend,
     IGetDisplayNameBackend,
     ICountUsersBackend
