@@ -72,6 +72,9 @@ class LdapUserBackend extends ABackend implements
             if ($uid !== null) {
                 // Cache pendant 360s (légèrement > fenêtre 5 min de NC).
                 $this->authCache->set($cacheKey, $uid, 360);
+                // Met en cache l'existence de l'utilisateur pour éviter les appels LDAP
+                // répétés lors de la validation de session WebDAV (burst de requêtes au login).
+                $this->authCache->set('exists_' . hash('sha256', $uid), '1', 360);
                 return $uid;
             }
         } catch (\Throwable $e) {
@@ -87,12 +90,27 @@ class LdapUserBackend extends ABackend implements
 
     /**
      * Indique si l'utilisateur existe dans l'AD.
-     * Utilisé par Nextcloud pour la complétion automatique et le partage.
+     * Utilisé par Nextcloud pour la complétion automatique et le partage,
+     * et surtout pour valider la session sur chaque requête WebDAV.
+     *
+     * Le cache (peuplé par checkPassword) évite les appels LDAP répétés lors
+     * du burst de requêtes parallèles au chargement de la page Fichiers.
      */
     public function userExists($uid): bool {
+        $cacheKey = 'exists_' . hash('sha256', $uid);
+        $cached = $this->authCache->get($cacheKey);
+        if ($cached !== null) {
+            return $cached === '1';
+        }
+
         try {
-            return $this->ldapService->userExists($uid);
-        } catch (\Throwable) {
+            $exists = $this->ldapService->userExists($uid);
+            if ($exists) {
+                $this->authCache->set($cacheKey, '1', 300);
+            }
+            return $exists;
+        } catch (\Throwable $e) {
+            $this->logger->warning('[SynoLDAP] userExists(' . $uid . ') erreur: ' . $e->getMessage());
             return false;
         }
     }
