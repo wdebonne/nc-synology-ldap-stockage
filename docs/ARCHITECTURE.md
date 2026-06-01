@@ -48,11 +48,20 @@ Deux types de connexions :
 1. **Connexion service** (`connect()`) : bind avec le compte de service configuré — utilisé pour les recherches (getUserInfo, getAllUserUids, getUserGroups)
 2. **Connexion brute** (`connectRaw()`) : sans bind initial — utilisé uniquement pour tester les credentials utilisateur dans `authenticate()`
 
+Normalisation du login (v2.0.2) :
+- `stripDomainPrefix()` : retire le préfixe `DOMAIN\` avant toute recherche (`sAMAccountName` ne contient pas le domaine dans l'AD)
+- `buildUserSearchFilter()` : si le login contient `@`, le filtre inclut aussi `userPrincipalName` pour les logins UPN
+
+> **Note PHP** : `ldap_get_entries()` et `ldap_get_attributes()` retournent toujours les noms d'attributs en **minuscules**. Tous les accès aux attributs LDAP utilisent donc `strtolower($attrName)` comme clé.
+
 Flux `authenticate()` :
 ```
 authenticate(login, password)
   ├─ guard: empty($password) → null  (protection bind anonyme)
-  ├─ getUserInfo($login) via connexion service → retourne dn, uid
+  ├─ getUserInfo($login)
+  │    ├─ stripDomainPrefix(login) → retire DOMAIN\
+  │    ├─ buildUserSearchFilter() → filtre sAMAccountName ou UPN
+  │    └─ retourne dn, uid (via strtolower(attr)), displayName
   ├─ connectRaw() → nouvelle connexion LDAP
   ├─ ldap_bind($conn, $dn, $password) → true/false
   ├─ ldap_unbind($conn) dans finally
@@ -158,9 +167,9 @@ LdapService::authenticate(login, password)
 
 Aucune dépendance externe. Les appels API DSM utilisent `file_get_contents` avec stream context. Les interfaces NC sont résolues par l'injecteur de dépendances d'OCP.
 
-### Pas de curl
+### cURL pour les appels API DSM
 
-Compatibilité maximale — `curl` n'est pas toujours disponible dans les environnements PHP mutualisés. `file_get_contents` est disponible partout où PHP tourne.
+Les appels à l'API REST Synology utilisent cURL (depuis la v2.0.1). `file_get_contents` a été remplacé pour une meilleure gestion des erreurs réseau et la compatibilité avec les environnements qui n'ont pas `allow_url_fopen` activé.
 
 ### Injecteur de dépendances NC
 

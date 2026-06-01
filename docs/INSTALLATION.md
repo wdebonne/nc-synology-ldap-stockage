@@ -5,7 +5,7 @@
 | Composant | Version minimale |
 |-----------|-----------------|
 | Nextcloud | 25 |
-| PHP | 8.0 avec extensions `ldap`, `smbclient` |
+| PHP | 8.1 avec extensions `ldap`, `smbclient` |
 | App NC | `files_external` (activée) |
 | Synology DSM | 6.2+ (pour l'API ACL) |
 
@@ -49,7 +49,7 @@ sudo -u www-data php /var/www/nextcloud/occ app:enable synoldap
 
 ```bash
 sudo -u www-data php /var/www/nextcloud/occ app:list | grep synoldap
-# Doit afficher : synoldap: 2.0.0
+# Doit afficher : synoldap: 2.0.2
 ```
 
 ---

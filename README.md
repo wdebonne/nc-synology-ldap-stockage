@@ -2,10 +2,10 @@
 
 **Application Nextcloud** pour l'intégration complète de l'Active Directory Synology : authentification, groupes, ACL et stockage externe SMB — sans app tierce.
 
-[![Nextcloud](https://img.shields.io/badge/Nextcloud-25--30-0082c9?logo=nextcloud)](https://nextcloud.com)
-[![PHP](https://img.shields.io/badge/PHP-8.0%2B-777bb4?logo=php)](https://php.net)
+[![Nextcloud](https://img.shields.io/badge/Nextcloud-25--33-0082c9?logo=nextcloud)](https://nextcloud.com)
+[![PHP](https://img.shields.io/badge/PHP-8.1%2B-777bb4?logo=php)](https://php.net)
 [![Licence](https://img.shields.io/badge/Licence-AGPL--3.0-green)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.0.0-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/Version-2.0.2-blue)](CHANGELOG.md)
 
 ---
 
@@ -71,7 +71,7 @@ Utilisateur ouvre Nextcloud → saisit login Windows + mot de passe
 | Composant | Version minimale |
 |-----------|-----------------|
 | Nextcloud | 25 |
-| PHP | 8.0 |
+| PHP | 8.1 |
 | Extension PHP | `ldap`, `smbclient` |
 | App NC | `files_external` (activée) |
 
@@ -163,4 +163,4 @@ Les contributions sont les bienvenues ! Voir [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Auteur
 
-**wdebonne** — [wdebonne@gmail.com](mailto:wdebonne@gmail.com)
+**wdebonne**

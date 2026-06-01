@@ -29,7 +29,12 @@ class LdapService {
         }
 
         $scheme = $useTls ? 'ldaps' : 'ldap';
-        $conn   = @ldap_connect("{$scheme}://{$host}:{$port}");
+
+        if ($useTls) {
+            ldap_set_option(null, LDAP_OPT_X_TLS_REQUIRE_CERT, LDAP_OPT_X_TLS_NEVER);
+        }
+
+        $conn = @ldap_connect("{$scheme}://{$host}:{$port}");
 
         if (!$conn) {
             throw new \RuntimeException("Connexion LDAP impossible vers {$scheme}://{$host}:{$port}");
@@ -68,6 +73,10 @@ class LdapService {
         $useTls = $this->config->getAppValue(self::APP_ID, 'ldap_tls', '0') === '1';
         $scheme = $useTls ? 'ldaps' : 'ldap';
 
+        if ($useTls) {
+            ldap_set_option(null, LDAP_OPT_X_TLS_REQUIRE_CERT, LDAP_OPT_X_TLS_NEVER);
+        }
+
         $conn = @ldap_connect("{$scheme}://{$host}:{$port}");
         if (!$conn) {
             throw new \RuntimeException("Connexion LDAP impossible vers {$scheme}://{$host}:{$port}");
@@ -81,6 +90,30 @@ class LdapService {
     }
 
     // ─── Authentification utilisateur ────────────────────────────────────────
+
+    /**
+     * Normalise le login en retirant le préfixe domaine Windows (DOMAIN\user → user).
+     * Nécessaire car sAMAccountName ne contient pas le préfixe domaine dans l'AD.
+     */
+    private function stripDomainPrefix(string $login): string {
+        $pos = strpos($login, '\\');
+        return $pos !== false ? substr($login, $pos + 1) : $login;
+    }
+
+    /**
+     * Construit le filtre LDAP pour rechercher un utilisateur par son nom de connexion.
+     * Gère les trois formats courants : sAMAccountName, DOMAIN\user, et UPN (user@domain).
+     */
+    private function buildUserSearchFilter(string $login, string $attr): string {
+        $escaped = ldap_escape($login, '', LDAP_ESCAPE_FILTER);
+
+        // Format UPN (user@domain.com) : chercher aussi par userPrincipalName
+        if (strpos($login, '@') !== false) {
+            return "(|({$attr}={$escaped})(userPrincipalName={$escaped}))";
+        }
+
+        return "({$attr}={$escaped})";
+    }
 
     /**
      * Valide le login/mot de passe d'un utilisateur contre l'AD Synology.
@@ -100,6 +133,7 @@ class LdapService {
         // 1. Trouver le DN via le compte de service
         $info = $this->getUserInfo($loginName);
         if ($info === null) {
+            $this->logger->debug("[SynoLDAP] Utilisateur introuvable dans l'AD : {$loginName}");
             return null;
         }
 
@@ -112,10 +146,11 @@ class LdapService {
         }
 
         if ($bound) {
-            $this->logger->info("[SynoLDAP] Authentification réussie : {$loginName}");
+            $this->logger->info("[SynoLDAP] Authentification réussie : {$loginName} → {$info['uid']}");
             return $info['uid'];
         }
 
+        $this->logger->debug("[SynoLDAP] Mot de passe incorrect pour : {$loginName}");
         return null;
     }
 
@@ -145,21 +180,26 @@ class LdapService {
     /**
      * Retourne DN, uid et displayName d'un utilisateur, ou null s'il n'existe pas.
      *
+     * Accepte les formats : sAMAccountName, DOMAIN\user, user@domain.com.
+     * PHP retourne les noms d'attributs LDAP en minuscules — on accède donc via strtolower().
+     *
      * @return array{dn: string, uid: string, displayName: string}|null
      */
     public function getUserInfo(string $uid): ?array {
         $conn         = $this->connect();
         $userBaseDn   = $this->config->getAppValue(self::APP_ID, 'ldap_user_base_dn', '');
         $userNameAttr = $this->config->getAppValue(self::APP_ID, 'ldap_user_attr', 'sAMAccountName');
+        $lcAttr       = strtolower($userNameAttr);
 
         try {
             if (empty($userBaseDn)) {
                 throw new \RuntimeException('Base DN des utilisateurs non configurée.');
             }
 
-            $escaped = ldap_escape($uid, '', LDAP_ESCAPE_FILTER);
-            $filter  = "({$userNameAttr}={$escaped})";
-            $search  = @ldap_search(
+            // Retirer le préfixe domaine Windows si présent (DOMAIN\user → user)
+            $login  = $this->stripDomainPrefix($uid);
+            $filter = $this->buildUserSearchFilter($login, $userNameAttr);
+            $search = @ldap_search(
                 $conn, $userBaseDn, $filter,
                 [$userNameAttr, 'cn', 'displayName', 'givenName', 'sn', 'mail'],
                 0, 1
@@ -171,23 +211,21 @@ class LdapService {
 
             $entry = ldap_first_entry($conn, $search);
             $dn    = ldap_get_dn($conn, $entry);
+            // PHP LDAP retourne toujours les noms d'attributs en minuscules
             $attrs = ldap_get_attributes($conn, $entry);
 
             // Nom d'affichage : displayName > cn > Prénom Nom > uid
-            $displayName = $attrs['displayname'][0]
-                ?? $attrs['displayName'][0]
-                ?? $attrs['cn'][0]
-                ?? null;
+            $displayName = $attrs['displayname'][0] ?? $attrs['cn'][0] ?? null;
 
             if ($displayName === null) {
-                $first = $attrs['givenname'][0] ?? $attrs['givenName'][0] ?? '';
+                $first = $attrs['givenname'][0] ?? '';
                 $last  = $attrs['sn'][0] ?? '';
-                $displayName = trim("{$first} {$last}") ?: $uid;
+                $displayName = trim("{$first} {$last}") ?: $login;
             }
 
             return [
                 'dn'          => $dn,
-                'uid'         => $attrs[$userNameAttr][0] ?? $uid,
+                'uid'         => $attrs[$lcAttr][0] ?? $login,
                 'displayName' => $displayName,
                 'email'       => $attrs['mail'][0] ?? '',
             ];
@@ -271,12 +309,13 @@ class LdapService {
             throw new \RuntimeException('Erreur recherche LDAP groupes: ' . ldap_error($conn));
         }
 
-        $entries = ldap_get_entries($conn, $search);
-        $groups  = [];
+        $entries   = ldap_get_entries($conn, $search);
+        $lcNameAttr = strtolower($groupNameAttr);
+        $groups    = [];
 
         for ($i = 0; $i < (int)$entries['count']; $i++) {
-            if (!empty($entries[$i][$groupNameAttr][0])) {
-                $groups[] = $entries[$i][$groupNameAttr][0];
+            if (!empty($entries[$i][$lcNameAttr][0])) {
+                $groups[] = $entries[$i][$lcNameAttr][0];
             }
         }
 
@@ -302,15 +341,25 @@ class LdapService {
         }
 
         // Exclure les comptes désactivés (userAccountControl bit 2)
-        $baseFilter = "(&(objectClass={$userObjClass})(!(userAccountControl:1.2.840.113556.1.4.803:=2)))";
+        $strictFilter   = "(&(objectClass={$userObjClass})(!(userAccountControl:1.2.840.113556.1.4.803:=2)))";
+        $fallbackFilter = "(objectClass={$userObjClass})";
 
         if (!empty($search)) {
             $esc = ldap_escape($search, '', LDAP_ESCAPE_FILTER);
-            $baseFilter = "(&{$baseFilter}({$userNameAttr}=*{$esc}*))";
+            $searchPart   = "({$userNameAttr}=*{$esc}*)";
+            $strictFilter   = "(&{$strictFilter}{$searchPart})";
+            $fallbackFilter = "(&{$fallbackFilter}{$searchPart})";
         }
 
         $sizelimit = $limit !== null ? (int)$limit + (int)($offset ?? 0) : 1000;
-        $result    = @ldap_search($conn, $userBaseDn, $baseFilter, [$userNameAttr], 0, $sizelimit);
+        $result    = @ldap_search($conn, $userBaseDn, $strictFilter, [$userNameAttr], 0, $sizelimit);
+
+        // Samba 4 peut retourner un résultat vide (count=0) au lieu de false pour
+        // le filtre OID userAccountControl non supporté — fallback dans les deux cas.
+        $isEmpty = !$result || ldap_count_entries($conn, $result) === 0;
+        if ($isEmpty) {
+            $result = @ldap_search($conn, $userBaseDn, $fallbackFilter, [$userNameAttr], 0, $sizelimit);
+        }
 
         if (!$result) {
             ldap_unbind($conn);
@@ -320,10 +369,12 @@ class LdapService {
         $entries = ldap_get_entries($conn, $result);
         ldap_unbind($conn);
 
-        $uids = [];
+        // ldap_get_entries() retourne les noms d'attributs en minuscules
+        $lcAttr = strtolower($userNameAttr);
+        $uids   = [];
         for ($i = 0; $i < (int)$entries['count']; $i++) {
-            if (!empty($entries[$i][$userNameAttr][0])) {
-                $uids[] = $entries[$i][$userNameAttr][0];
+            if (!empty($entries[$i][$lcAttr][0])) {
+                $uids[] = $entries[$i][$lcAttr][0];
             }
         }
 

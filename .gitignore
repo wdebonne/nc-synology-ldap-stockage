@@ -3,6 +3,9 @@
 
 # Nextcloud app
 vendor/
+
+# Source de référence locale uniquement — non publiée
+user_ldap/
 node_modules/
 *.log
 .DS_Store

@@ -24,12 +24,16 @@ sudo -u www-data php /var/www/nextcloud/occ user:resetpassword --no-interaction 
 
 1. **Vérifier que l'app est active** : `occ app:list | grep synoldap`
 2. **Tester la connexion LDAP** dans Administration → SynoLDAP → bouton "Tester la connexion LDAP"
-3. **Vérifier l'identifiant** : l'utilisateur doit saisir son `sAMAccountName` (identifiant Windows), pas son email ni son nom complet
+3. **Formats de login acceptés** (depuis la v2.0.2) :
+   - `jdupont` — sAMAccountName (recommandé)
+   - `CORP\jdupont` — préfixe domaine Windows (retiré automatiquement)
+   - `jean.dupont@corp.local` — format UPN (recherche aussi dans `userPrincipalName`)
 4. **Vérifier le compte** : le compte doit être actif sur le Synology (non désactivé dans l'AD)
-5. **Vérifier les logs** :
+5. **Activer les logs debug** et vérifier :
    ```bash
    tail -f data/nextcloud.log | grep -E "SynoLDAP|checkPassword|authenticate"
    ```
+   Les messages `[SynoLDAP] Utilisateur introuvable` vs `Mot de passe incorrect` permettent de distinguer les deux causes d'échec.
 
 ### "Cannot bind to LDAP server"
 

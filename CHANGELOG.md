@@ -7,6 +7,18 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [2.0.2] — 2026-06-01
+
+### Corrigé
+
+#### Authentification et liste d'utilisateurs LDAP
+- **Bug critique — zéro utilisateur listé** : PHP retourne les noms d'attributs LDAP en minuscules (`ldap_get_entries()`, `ldap_get_attributes()`). Dans `getAllUserUids()`, l'accès à `$entries[$i]['sAMAccountName']` était toujours `null` → la liste d'utilisateurs, le partage de fichiers et le panneau admin ne montraient aucun utilisateur LDAP. Corrigé avec `strtolower($userNameAttr)` dans `getAllUserUids()`, `getUserInfo()` et `getGroupsViaSearch()`.
+- **Login avec préfixe domaine Windows** (`DOMAIN\username`) : `sAMAccountName` ne contient pas le préfixe domaine dans l'AD. Le login `CORP\jdupont` échouait avec "utilisateur introuvable". Corrigé par la méthode privée `LdapService::stripDomainPrefix()`.
+- **Login au format UPN** (`utilisateur@domaine.com`) : la recherche inclut maintenant aussi `userPrincipalName` quand le login contient `@`. Géré par `LdapService::buildUserSearchFilter()`.
+- **Logs de diagnostic** : `authenticate()` journalise maintenant distinctement "utilisateur introuvable dans l'AD" vs "mot de passe incorrect" (niveau `debug`) pour faciliter le dépannage.
+
+---
+
 ## [2.0.0] — 2026-05-28
 
 ### Ajouté
