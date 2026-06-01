@@ -7,6 +7,17 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [2.0.4] — 2026-06-01
+
+### Ajouté
+
+#### Synchronisation automatique des groupes AD → groupes Nextcloud
+- **Sync directe sans mapping** : tous les groupes AD de l'utilisateur sont maintenant automatiquement créés comme groupes Nextcloud (même nom) et l'utilisateur y est ajouté — sans aucune configuration de mapping requise. Avant cette version, les groupes LDAP n'étaient appliqués à NC que si un mapping explicite était configuré.
+- **Retrait automatique** : si l'utilisateur n'est plus membre d'un groupe AD, il est retiré du groupe NC correspondant à la prochaine synchronisation — uniquement si ce groupe NC correspond à un vrai groupe AD (contrôle via `isKnownLdapGroup()`).
+- **`LdapService::isKnownLdapGroup(string $groupName)`** : nouvelle méthode qui vérifie l'existence d'un groupe dans l'annuaire LDAP par son `cn`. Protège les groupes NC locaux (même nom qu'un groupe AD) d'une suppression involontaire.
+
+---
+
 ## [2.0.3] — 2026-06-01
 
 ### Corrigé

@@ -119,8 +119,11 @@ class GroupSyncService {
     }
 
     private function syncGroupMemberships(IUser $user, array $ldapGroups): void {
-        $mappings     = $this->getMappings();
-        $autoEntries  = $this->getAutoEntries();
+        $mappings    = $this->getMappings();
+        $autoEntries = $this->getAutoEntries();
+
+        // Groupes AD couverts par un mapping manuel (pour éviter les doublons)
+        $mappedLdapGroups = [];
 
         // ── Mappings manuels ──────────────────────────────────────────────────
         foreach ($mappings as $mapping) {
@@ -135,6 +138,7 @@ class GroupSyncService {
                 continue;
             }
 
+            $mappedLdapGroups[] = $ldapGroupName;
             $inLdapGroup = in_array($ldapGroupName, $ldapGroups, true);
             $ncGroup     = $this->groupManager->get($ncGroupName);
 
@@ -155,7 +159,43 @@ class GroupSyncService {
             }
         }
 
-        // ── Entrées auto ──────────────────────────────────────────────────────
+        // ── Sync directe : groupes AD → groupes NC du même nom ───────────────
+        // Tout groupe AD non couvert par un mapping manuel est automatiquement
+        // reflété comme groupe Nextcloud (création si besoin, retrait si l'utilisateur
+        // n'est plus membre dans l'AD).
+        $uid = $user->getUID();
+        foreach ($ldapGroups as $ldapGroup) {
+            if (in_array($ldapGroup, $mappedLdapGroups, true)) {
+                continue; // déjà géré par mapping manuel
+            }
+            $ncGroup = $this->groupManager->get($ldapGroup);
+            if (!$ncGroup) {
+                $ncGroup = $this->groupManager->createGroup($ldapGroup);
+                $this->logger->info("[SynoLDAP] Groupe NC auto-créé depuis AD: {$ldapGroup}");
+            }
+            if ($ncGroup && !$ncGroup->inGroup($user)) {
+                $ncGroup->addUser($user);
+                $this->logger->info("[SynoLDAP] {$uid} ajouté au groupe AD direct: {$ldapGroup}");
+            }
+        }
+
+        // Retirer l'utilisateur des groupes NC qui portent le nom d'un groupe AD
+        // dont il n'est plus membre (retrait côté AD depuis la dernière sync).
+        $currentNcGroups = $this->groupManager->getUserGroups($user);
+        foreach ($currentNcGroups as $ncGroup) {
+            $gid = $ncGroup->getGID();
+            if (in_array($gid, $mappedLdapGroups, true)) {
+                continue; // géré par le mapping manuel
+            }
+            // Ne retirer que si ce groupe NC porte le nom d'un groupe AD connu
+            // et que l'utilisateur n'y est plus membre dans l'AD.
+            if ($this->ldapService->isKnownLdapGroup($gid) && !in_array($gid, $ldapGroups, true)) {
+                $ncGroup->removeUser($user);
+                $this->logger->info("[SynoLDAP] {$uid} retiré du groupe AD direct (plus membre): {$gid}");
+            }
+        }
+
+        // ── Entrées auto (SMB) ────────────────────────────────────────────────
         if (!empty($autoEntries)) {
             $this->syncAutoEntries($user, $ldapGroups, $autoEntries);
         }

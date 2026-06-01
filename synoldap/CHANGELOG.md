@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.0.4] - 2026-06-01
+
+### Ajouté
+- **Synchronisation directe des groupes AD → NC** : tous les groupes AD de l'utilisateur sont maintenant automatiquement reflétés comme groupes Nextcloud (même nom), sans configuration de mapping nécessaire. Les groupes couverts par un mapping manuel restent gérés par ce mapping. Un groupe NC est retiré à l'utilisateur si le groupe AD correspondant existe dans l'annuaire mais que l'utilisateur n'en fait plus partie.
+- **`LdapService::isKnownLdapGroup()`** : vérifie si un groupe NC correspond à un groupe AD réel (évite de retirer des utilisateurs de groupes NC purement locaux ayant le même nom qu'un groupe AD).
+
+---
+
 ## [2.0.3] - 2026-06-01
 
 ### Corrections

@@ -405,6 +405,34 @@ class LdapService {
         return $uids;
     }
 
+    // ─── Vérification groupe ─────────────────────────────────────────────────
+
+    /**
+     * Vérifie si un groupe existe dans l'AD LDAP (par son cn).
+     * Utilisé pour ne retirer un utilisateur NC d'un groupe que si ce groupe
+     * est géré par l'AD (évite de toucher aux groupes NC purement locaux).
+     */
+    public function isKnownLdapGroup(string $groupName): bool {
+        $groupBaseDn   = $this->config->getAppValue(self::APP_ID, 'ldap_group_base_dn', '');
+        $groupObjClass = $this->config->getAppValue(self::APP_ID, 'ldap_group_filter', 'group');
+
+        if (empty($groupBaseDn)) {
+            return false;
+        }
+
+        try {
+            $conn    = $this->connect();
+            $escaped = ldap_escape($groupName, '', LDAP_ESCAPE_FILTER);
+            $filter  = "(&(objectClass={$groupObjClass})(cn={$escaped}))";
+            $result  = @ldap_search($conn, $groupBaseDn, $filter, ['cn'], 0, 1);
+            $found   = $result && ldap_count_entries($conn, $result) > 0;
+            ldap_unbind($conn);
+            return $found;
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
     // ─── Test connexion ───────────────────────────────────────────────────────
 
     public function testConnection(): array {
