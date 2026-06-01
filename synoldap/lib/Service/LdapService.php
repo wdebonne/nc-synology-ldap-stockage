@@ -133,24 +133,23 @@ class LdapService {
         // 1. Trouver le DN via le compte de service
         $info = $this->getUserInfo($loginName);
         if ($info === null) {
-            $this->logger->debug("[SynoLDAP] Utilisateur introuvable dans l'AD : {$loginName}");
+            $this->logger->warning("[SynoLDAP] Authenticate: utilisateur '{$loginName}' introuvable dans l'AD");
             return null;
         }
 
         // 2. Tenter le bind avec les identifiants de l'utilisateur
+        // @ est intentionnel : comme user_ldap, on supprime le warning PHP (que NC peut convertir
+        // en exception) et on lit l'erreur via ldap_errno() après le bind.
         $conn = $this->connectRaw();
         try {
-            // Ne pas supprimer l'erreur avec @ : on veut le code LDAP en cas d'échec
-            $bound = ldap_bind($conn, $info['dn'], $password);
+            $bound = @ldap_bind($conn, $info['dn'], $password);
             if (!$bound) {
+                $errno = ldap_errno($conn);
                 $this->logger->warning(sprintf(
-                    '[SynoLDAP] Bind échoué pour %s (DN: %s) — erreur LDAP : %s',
-                    $loginName, $info['dn'], ldap_error($conn)
+                    '[SynoLDAP] Bind échoué pour %s (DN: %s) — errno %d : %s',
+                    $loginName, $info['dn'], $errno, ldap_error($conn)
                 ));
             }
-        } catch (\Throwable $e) {
-            $this->logger->warning("[SynoLDAP] Exception lors du bind pour {$loginName} : " . $e->getMessage());
-            $bound = false;
         } finally {
             ldap_unbind($conn);
         }
