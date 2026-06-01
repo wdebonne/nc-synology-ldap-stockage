@@ -54,7 +54,10 @@ class LdapUserBackend extends ABackend implements
      * Un mot de passe vide est toujours refusé (protection contre le bind anonyme LDAP).
      */
     public function checkPassword(string $loginName, string $password): string|false {
+        $this->logger->warning("[SynoLDAP] checkPassword appelé: login={$loginName} pwLen=" . strlen($password));
+
         if (empty($loginName) || empty($password)) {
+            $this->logger->warning("[SynoLDAP] checkPassword: login ou mot de passe vide → refusé");
             return false;
         }
 
@@ -62,6 +65,7 @@ class LdapUserBackend extends ABackend implements
         $cacheKey = hash('sha256', $loginName . ':' . $password);
         $cachedUid = $this->authCache->get($cacheKey);
         if ($cachedUid !== null) {
+            $this->logger->warning("[SynoLDAP] checkPassword: cache hit pour {$loginName} → {$cachedUid}");
             return $cachedUid;
         }
 
@@ -88,9 +92,13 @@ class LdapUserBackend extends ABackend implements
      * Utilisé par Nextcloud pour la complétion automatique et le partage.
      */
     public function userExists($uid): bool {
+        $this->logger->warning("[SynoLDAP] userExists appelé: uid={$uid}");
         try {
-            return $this->ldapService->userExists($uid);
-        } catch (\Throwable) {
+            $result = $this->ldapService->userExists($uid);
+            $this->logger->warning("[SynoLDAP] userExists({$uid}) → " . ($result ? 'true' : 'false'));
+            return $result;
+        } catch (\Throwable $e) {
+            $this->logger->warning("[SynoLDAP] userExists({$uid}) exception: " . $e->getMessage());
             return false;
         }
     }
