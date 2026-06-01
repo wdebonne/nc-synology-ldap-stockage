@@ -178,7 +178,7 @@ class LdapService {
         }
 
         if ($bound) {
-            $this->logger->info("[SynoLDAP] Authentification réussie : {$loginName} → {$info['uid']}");
+            $this->logger->warning("[SynoLDAP] AUTH OK: {$loginName} → {$info['uid']}");
             return $info['uid'];
         }
 
@@ -190,8 +190,13 @@ class LdapService {
      */
     public function userExists(string $uid): bool {
         try {
-            return $this->getUserInfo($uid) !== null;
-        } catch (\Throwable) {
+            $exists = $this->getUserInfo($uid) !== null;
+            if (!$exists) {
+                $this->logger->warning("[SynoLDAP] userExists({$uid}): introuvable dans l'AD");
+            }
+            return $exists;
+        } catch (\Throwable $e) {
+            $this->logger->warning("[SynoLDAP] userExists({$uid}) exception: " . $e->getMessage());
             return false;
         }
     }
@@ -235,7 +240,14 @@ class LdapService {
             0, 1
         );
 
-        if (!$search || ldap_count_entries($conn, $search) === 0) {
+        if (!$search) {
+            $this->logger->warning("[SynoLDAP] getUserInfo({$uid}): ldap_search échoué — " . ldap_error($conn));
+            // La connexion mise en cache est peut-être périmée — on la réinitialise
+            $this->serviceConn = null;
+            return null;
+        }
+
+        if (ldap_count_entries($conn, $search) === 0) {
             return null;
         }
 
