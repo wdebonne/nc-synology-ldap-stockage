@@ -222,53 +222,51 @@ class LdapService {
         $userNameAttr = $this->config->getAppValue(self::APP_ID, 'ldap_user_attr', 'sAMAccountName');
         $lcAttr       = strtolower($userNameAttr);
 
-        try {
-            if (empty($userBaseDn)) {
-                throw new \RuntimeException('Base DN des utilisateurs non configurée.');
-            }
-
-            // Retirer le préfixe domaine Windows si présent (DOMAIN\user → user)
-            $login  = $this->stripDomainPrefix($uid);
-            $filter = $this->buildUserSearchFilter($login, $userNameAttr);
-            $search = @ldap_search(
-                $conn, $userBaseDn, $filter,
-                [$userNameAttr, 'cn', 'displayName', 'givenName', 'sn', 'mail'],
-                0, 1
-            );
-
-            if (!$search || ldap_count_entries($conn, $search) === 0) {
-                return null;
-            }
-
-            $entry = ldap_first_entry($conn, $search);
-            $dn    = ldap_get_dn($conn, $entry);
-
-            // ldap_get_attributes() renvoie la casse du serveur (ex. Synology AD : "displayName", "givenName").
-            // On normalise immédiatement toutes les clés en minuscules pour des accès cohérents.
-            $raw   = ldap_get_attributes($conn, $entry);
-            $attrs = [];
-            foreach ($raw as $key => $value) {
-                if (is_string($key)) {
-                    $attrs[strtolower($key)] = $value;
-                }
-            }
-
-            // Nom d'affichage : displayName > cn > givenName sn > uid
-            $displayName = $attrs['displayname'][0] ?? $attrs['cn'][0] ?? null;
-
-            if ($displayName === null) {
-                $first = $attrs['givenname'][0] ?? '';
-                $last  = $attrs['sn'][0] ?? '';
-                $displayName = trim("{$first} {$last}") ?: $login;
-            }
-
-            return [
-                'dn'          => $dn,
-                'uid'         => $attrs[$lcAttr][0] ?? $login,
-                'displayName' => $displayName,
-                'email'       => $attrs['mail'][0] ?? '',
-            ];
+        if (empty($userBaseDn)) {
+            throw new \RuntimeException('Base DN des utilisateurs non configurée.');
         }
+
+        // Retirer le préfixe domaine Windows si présent (DOMAIN\user → user)
+        $login  = $this->stripDomainPrefix($uid);
+        $filter = $this->buildUserSearchFilter($login, $userNameAttr);
+        $search = @ldap_search(
+            $conn, $userBaseDn, $filter,
+            [$userNameAttr, 'cn', 'displayName', 'givenName', 'sn', 'mail'],
+            0, 1
+        );
+
+        if (!$search || ldap_count_entries($conn, $search) === 0) {
+            return null;
+        }
+
+        $entry = ldap_first_entry($conn, $search);
+        $dn    = ldap_get_dn($conn, $entry);
+
+        // ldap_get_attributes() renvoie la casse du serveur (ex. Synology AD : "displayName", "givenName").
+        // On normalise immédiatement toutes les clés en minuscules pour des accès cohérents.
+        $raw   = ldap_get_attributes($conn, $entry);
+        $attrs = [];
+        foreach ($raw as $key => $value) {
+            if (is_string($key)) {
+                $attrs[strtolower($key)] = $value;
+            }
+        }
+
+        // Nom d'affichage : displayName > cn > givenName sn > uid
+        $displayName = $attrs['displayname'][0] ?? $attrs['cn'][0] ?? null;
+
+        if ($displayName === null) {
+            $first = $attrs['givenname'][0] ?? '';
+            $last  = $attrs['sn'][0] ?? '';
+            $displayName = trim("{$first} {$last}") ?: $login;
+        }
+
+        return [
+            'dn'          => $dn,
+            'uid'         => $attrs[$lcAttr][0] ?? $login,
+            'displayName' => $displayName,
+            'email'       => $attrs['mail'][0] ?? '',
+        ];
     }
 
     // ─── Groupes ──────────────────────────────────────────────────────────────
