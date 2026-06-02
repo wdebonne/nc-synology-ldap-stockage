@@ -7,6 +7,22 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [2.0.24] — 2026-06-02
+
+### Refactoring majeur — userExists() basé sur oc_preferences (même base que user_ldap)
+
+- **Diagnostic** : les versions 2.0.22 et 2.0.23 n'ont pas résolu le 401 car `userExists()` appelait encore LDAP dès que le cache distribué expirait (~5 min). `IUserManager::get()` appelle `userExists()` à **chaque requête** pour charger l'objet session — toute lenteur LDAP à ce moment invalide la session.
+- **Root cause de user_ldap** : `User_LDAP::userExists()` consulte d'abord `ldap_user_mapping` (table DB privée), jamais le LDAP pour les utilisateurs connus. La table est peuplée une seule fois lors de la première authentification.
+- **Fix** : `userExists()` réplique exactement cette logique avec `oc_preferences` comme table de mapping :
+  1. Cache distribué (burst, < 5 min)
+  2. `IConfig::getUserValue($uid, 'synoldap', 'known')` — persistant, aucun LDAP pour tout utilisateur déjà connecté (équivalent de `ldap_user_mapping`)
+  3. LDAP — uniquement pour un utilisateur jamais vu par NC (première connexion)
+- **`checkPassword()`** : appelle `$config->setUserValue($uid, 'synoldap', 'known', '1')` après chaque authentification réussie — alimente le mapping persistant.
+- `IDBConnection` retiré du constructeur, `IConfig` injecté à la place.
+- `IConfig::getUserValue` ne dépend d'aucune schema migration et fonctionne sur toutes les versions NC supportées.
+
+---
+
 ## [2.0.23] — 2026-06-02
 
 ### Correction critique — Session invalide / 401 sur les partages (approche définitive)
