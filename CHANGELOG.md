@@ -7,6 +7,30 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [2.0.23] — 2026-06-02
+
+### Correction critique — Session invalide / 401 sur les partages (approche définitive)
+
+- **Cause profonde** : `userExists()` était appelé par `IUserManager::get()` à chaque requête pour valider la session. Dès que le cache distribué expirait (~5 min), un appel LDAP synchrone était effectué. En cas de lenteur ou d'indisponibilité du LDAP, l'appel retournait `false` → Nextcloud ne trouvait plus l'utilisateur dans aucun backend → session invalidée → **401 sur toutes les requêtes API**, dont les appels de la page Partages.
+- **Fix** : `userExists()` suit désormais exactement le même ordre que `user_ldap` :
+  1. Cache distribué (< 5 min)
+  2. **Base de données NC** (`oc_users`) — aucun LDAP pour les utilisateurs déjà provisionnés
+  3. LDAP — uniquement pour les nouveaux utilisateurs jamais vus par NC
+- **`LdapService::getUserInfo()`** : distingue maintenant "LDAP indisponible" (lève `RuntimeException`) de "utilisateur introuvable dans l'AD" (retourne `null`) via `ldap_errno()`.
+- **`LdapService::userExists()`** : laisse les exceptions LDAP se propager afin que `LdapUserBackend::userExists()` puisse les attraper et utiliser le fallback DB.
+- **Injection de `IDBConnection`** dans `LdapUserBackend` pour la requête `oc_users`.
+
+---
+
+## [2.0.22] — 2026-06-02
+
+### Correction critique — Session invalide lors de l'accès aux partages (401)
+
+- **Cause** : `isUserEnabled()` appelait `userExists()` à chaque requête API pour vérifier l'état du compte côté AD. `userExists()` capture ses propres exceptions et retourne `false` silencieusement. Résultat : dès que le cache distribué expirait (~5 min), un appel LDAP était effectué ; en cas de lenteur ou d'indisponibilité momentanée, `userExists()` retournait `false` sans lever d'exception → le `catch (\Throwable)` de `isUserEnabled()` n'était jamais atteint → Nextcloud considérait l'utilisateur désactivé → réponse 401 sur toutes les requêtes API, notamment la page "Partages".
+- **Fix** : `isUserEnabled()` retourne désormais `(bool) $queryDatabaseValue()` — la valeur stockée en base NC — identique au comportement de `user_ldap`. La révocation AD reste effective : un compte désactivé côté Synology échoue au prochain `checkPassword()` → plus de nouvelle session.
+
+---
+
 ## [2.0.10] — 2026-06-01
 
 ### Corrections critiques

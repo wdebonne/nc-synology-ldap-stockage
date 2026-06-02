@@ -6,6 +6,7 @@ namespace OCA\SynoLDAP\UserBackend;
 use OCA\SynoLDAP\Service\LdapService;
 use OCP\ICache;
 use OCP\ICacheFactory;
+use OCP\IDBConnection;
 use OCP\User\Backend\ABackend;
 use OCP\User\Backend\ICheckPasswordBackend;
 use OCP\User\Backend\ICountUsersBackend;
@@ -33,14 +34,13 @@ class LdapUserBackend extends ABackend implements
     ICountUsersBackend,
     IProvideEnabledStateBackend
 {
-    // Cache d'authentification : évite les appels LDAP répétés lors de la re-validation
-    // de session par NC (checkTokenCredentials toutes les 5 minutes).
     private ICache $authCache;
 
     public function __construct(
         private LdapService $ldapService,
         private LoggerInterface $logger,
         ICacheFactory $cacheFactory,
+        private IDBConnection $db,
     ) {
         $this->authCache = $cacheFactory->createDistributed('synoldap_auth_');
     }
@@ -91,12 +91,16 @@ class LdapUserBackend extends ABackend implements
     // ─── Existence / énumération ──────────────────────────────────────────────
 
     /**
-     * Indique si l'utilisateur existe dans l'AD.
-     * Utilisé par Nextcloud pour la complétion automatique et le partage,
-     * et surtout pour valider la session sur chaque requête WebDAV.
+     * Indique si l'utilisateur est reconnu par ce backend.
      *
-     * Le cache (peuplé par checkPassword) évite les appels LDAP répétés lors
-     * du burst de requêtes parallèles au chargement de la page Fichiers.
+     * Ordre identique à user_ldap :
+     *  1. Cache distribué (rapide, < 5 min)
+     *  2. Base de données NC (oc_users) — aucun appel LDAP pour les utilisateurs connus
+     *  3. LDAP — uniquement pour les nouveaux utilisateurs jamais vus par NC
+     *
+     * Ce comportement évite les 401 causés par un LDAP momentanément lent : dès qu'un
+     * utilisateur s'est connecté une fois, son compte est dans oc_users et userExists()
+     * répond instantanément sans toucher le LDAP, quelle que soit la durée de la session.
      */
     public function userExists($uid): bool {
         $cacheKey = 'exists_' . hash('sha256', $uid);
@@ -105,6 +109,14 @@ class LdapUserBackend extends ABackend implements
             return $cached === '1';
         }
 
+        // Vérification DB (même approche que user_ldap avec ldap_user_mapping).
+        // Tout utilisateur ayant déjà été provisionné par ce backend est dans oc_users.
+        if ($this->existsInDatabase($uid)) {
+            $this->authCache->set($cacheKey, '1', 300);
+            return true;
+        }
+
+        // Première connexion : le compte n'est pas encore dans NC → vérifier l'AD.
         try {
             $exists = $this->ldapService->userExists($uid);
             if ($exists) {
@@ -112,7 +124,28 @@ class LdapUserBackend extends ABackend implements
             }
             return $exists;
         } catch (\Throwable $e) {
-            $this->logger->warning('[SynoLDAP] userExists(' . $uid . ') erreur: ' . $e->getMessage());
+            $this->logger->warning('[SynoLDAP] userExists(' . $uid . ') erreur LDAP: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Vérifie si l'utilisateur est dans la table oc_users avec notre backend.
+     * Requête DB simple, sans aucun appel LDAP — miroir de user_ldap::userManager->exists().
+     */
+    private function existsInDatabase(string $uid): bool {
+        try {
+            $qb = $this->db->getQueryBuilder();
+            $qb->select('uid')
+               ->from('users')
+               ->where($qb->expr()->eq('uid', $qb->createNamedParameter($uid)))
+               ->andWhere($qb->expr()->eq('backend', $qb->createNamedParameter(self::class)))
+               ->setMaxResults(1);
+            $result = $qb->executeQuery();
+            $row    = $result->fetch();
+            $result->closeCursor();
+            return $row !== false;
+        } catch (\Throwable) {
             return false;
         }
     }
@@ -185,16 +218,13 @@ class LdapUserBackend extends ABackend implements
     // ─── État du compte ───────────────────────────────────────────────────────
 
     /**
-     * Un compte est actif si son sAMAccountName existe dans l'AD.
-     * Les comptes désactivés côté Synology échouent au bind LDAP → accès révoqué.
-     * $queryDatabaseValue() retourne l'état stocké dans NC (fallback si l'AD est injoignable).
+     * Retourne l'état activé/désactivé depuis la base NC (comme user_ldap).
+     * On ne sonde pas l'AD ici : userExists() capture les exceptions et retourne false,
+     * ce qui rendrait queryDatabaseValue() inatteignable et invaliderait chaque session
+     * dès que le cache LDAP expire. La révocation AD passe par checkPassword() au prochain login.
      */
     public function isUserEnabled(string $uid, callable $queryDatabaseValue): bool {
-        try {
-            return $this->userExists($uid);
-        } catch (\Throwable) {
-            return (bool) $queryDatabaseValue();
-        }
+        return (bool) $queryDatabaseValue();
     }
 
     /**

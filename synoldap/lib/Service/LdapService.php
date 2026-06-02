@@ -187,18 +187,15 @@ class LdapService {
 
     /**
      * Vérifie si un utilisateur existe dans l'AD.
+     * Les exceptions (LDAP indisponible, timeout…) se propagent à l'appelant
+     * afin qu'il puisse distinguer une erreur réseau d'une absence réelle dans l'AD.
      */
     public function userExists(string $uid): bool {
-        try {
-            $exists = $this->getUserInfo($uid) !== null;
-            if (!$exists) {
-                $this->logger->warning("[SynoLDAP] userExists({$uid}): introuvable dans l'AD");
-            }
-            return $exists;
-        } catch (\Throwable $e) {
-            $this->logger->warning("[SynoLDAP] userExists({$uid}) exception: " . $e->getMessage());
-            return false;
+        $exists = $this->getUserInfo($uid) !== null;
+        if (!$exists) {
+            $this->logger->debug("[SynoLDAP] userExists({$uid}): introuvable dans l'AD");
         }
+        return $exists;
     }
 
     /**
@@ -241,9 +238,15 @@ class LdapService {
         );
 
         if (!$search) {
-            $this->logger->warning("[SynoLDAP] getUserInfo({$uid}): ldap_search échoué — " . ldap_error($conn));
-            // La connexion mise en cache est peut-être périmée — on la réinitialise
+            $errno  = ldap_errno($conn);
+            $errmsg = ldap_error($conn);
             $this->serviceConn = null;
+            if ($errno !== 0) {
+                // Erreur réseau / timeout : on lève pour que l'appelant distingue
+                // "LDAP indisponible" de "utilisateur introuvable dans l'AD".
+                throw new \RuntimeException("Erreur LDAP (errno {$errno}): {$errmsg}");
+            }
+            $this->logger->warning("[SynoLDAP] getUserInfo({$uid}): ldap_search échoué sans erreur");
             return null;
         }
 
