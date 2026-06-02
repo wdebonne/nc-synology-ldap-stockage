@@ -316,7 +316,19 @@ class LdapService {
         $filter  = "({$userNameAttr}={$escaped})";
         $search  = @ldap_search($conn, $userBaseDn, $filter, ['memberof']);
 
-        if (!$search || ldap_count_entries($conn, $search) === 0) {
+        if (!$search) {
+            $errno  = ldap_errno($conn);
+            $errmsg = ldap_error($conn);
+            if ($errno !== 0) {
+                // Erreur réseau/timeout : on lève pour que syncUser() l'attrape et abandonne
+                // la synchronisation sans toucher aux groupes existants.
+                // Ne pas retourner [] silencieusement — ça supprimerait tous les mappings manuels.
+                throw new \RuntimeException("Erreur LDAP groupes memberOf (errno {$errno}): {$errmsg}");
+            }
+            return [];
+        }
+
+        if (ldap_count_entries($conn, $search) === 0) {
             return [];
         }
 

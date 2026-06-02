@@ -7,6 +7,29 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [2.0.25] — 2026-06-02
+
+### Correction — Admin natif perd son groupe / utilisateur sans fichiers après login
+
+Audit complet de user_ldap révèle deux causes racines distinctes :
+
+#### Bug 1 — L'admin natif NC perd son appartenance au groupe admin lors des mises à jour
+
+- **Cause** : `PostLoginEvent` se déclenche pour **tous** les utilisateurs, y compris les comptes NC natifs (ex. `admin`). `syncUser(admin)` appelle `getUserGroups('admin')` → l'admin n'existe pas en LDAP → retourne `[]` → `syncAdminStatus(admin, [])` : `shouldBeAdmin = false`, `isCurrentlyAdmin = true` → **retire admin du groupe admin** si d'autres admins existent.
+- **user_ldap** évite ce problème car `Group_Proxy` ne connaît que les groupes LDAP : pour un utilisateur natif, il retourne `[]` sans toucher aux groupes NC existants.
+- **Fix** : `UserLoggedInListener` vérifie désormais `oc_preferences[synoldap/known] = 1` avant de traiter l'événement. Seuls les utilisateurs authentifiés par le backend SynoLDAP (ayant cette préférence posée par `checkPassword()`) sont synchronisés.
+
+#### Bug 2 — Utilisateur n'a aucun fichier/dossier partagé après login
+
+- **Cause** : `getGroupsViaMemberOf()` retournait `[]` **silencieusement** quand `ldap_search` échoue (erreur réseau, timeout). `syncGroupMemberships(user, [])` interprétait ce `[]` comme "l'utilisateur n'a plus aucun groupe" → retirait l'utilisateur de **tous ses groupes** mappés manuellement → les montages SMB disparaissaient → aucun fichier visible.
+- **Fix** : `getGroupsViaMemberOf()` lève une `RuntimeException` quand `ldap_search` échoue avec `errno != 0` (erreur réelle). `syncUser()` attrape cette exception et **abandonne la synchronisation sans toucher aux groupes existants** — identique au comportement user_ldap.
+
+#### Fix complémentaire
+
+- `userExists()` pose aussi `known=1` dans `oc_preferences` quand LDAP confirme l'existence (pas seulement `checkPassword()`), ce qui couvre les sessions créées avant la v2.0.24.
+
+---
+
 ## [2.0.24] — 2026-06-02
 
 ### Refactoring majeur — userExists() basé sur oc_preferences (même base que user_ldap)
