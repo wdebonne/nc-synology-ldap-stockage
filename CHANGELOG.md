@@ -7,6 +7,37 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [2.0.30] — 2026-06-03
+
+### Correction — Bug critique dans ensureUserRow() (QueryBuilder réutilisé)
+
+Console F12 confirme la cause racine :
+```
+PROPFIND /remote.php/dav/files/e.berthy/ 401 (Unauthorized)
+```
+L'utilisateur est connecté (dashboard visible) mais le DAV retourne 401. La session NC
+fonctionne pour les pages HTML mais le middleware DAV de NC fait une vérification plus
+stricte de `oc_users.backend` et échoue si ce champ pointe vers un backend non enregistré.
+
+**Bug dans 2.0.29** : `ensureUserRow()` créait trois QueryBuilders séparés mais utilisait
+`$qb->createNamedParameter()` du premier (SELECT) dans les suivants (INSERT/UPDATE).
+Les named parameters appartiennent à leur QueryBuilder — les mélanger produit un SQL
+invalide qui échoue silencieusement (capturé par le try/catch). Résultat : `oc_users.backend`
+n'était **jamais** mis à jour malgré le code correct en apparence.
+
+**Fix** : chaque opération SQL utilise maintenant son propre QueryBuilder avec ses propres
+named parameters. Le curseur est correctement fermé après le SELECT.
+
+**Note importante pour NC AIO** : après toute mise à jour de fichiers PHP, il faut vider
+l'OPcache en redémarrant le container NC :
+```
+docker restart nextcloud-aio-nextcloud
+```
+Sans ce redémarrage, l'ancien code compilé continue à tourner et les corrections n'ont
+aucun effet.
+
+---
+
 ## [2.0.29] — 2026-06-03
 
 ### Correction critique — NC AIO : 401 partages, "Se souvenir de moi", création de fichiers

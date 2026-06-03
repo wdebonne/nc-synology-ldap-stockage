@@ -149,37 +149,45 @@ class LdapUserBackend extends ABackend implements
      */
     private function ensureUserRow(string $uid): void {
         try {
-            $qb  = $this->db->getQueryBuilder();
-            $row = $qb->select('backend')
+            // ── 1. Lecture de l'état actuel ──────────────────────────────────
+            // Chaque opération DB utilise son propre QueryBuilder avec ses propres
+            // named parameters. Les réutiliser entre builders différents provoque
+            // des erreurs SQL silencieuses.
+            $selectQb = $this->db->getQueryBuilder();
+            $result   = $selectQb->select('backend')
                 ->from('users')
-                ->where($qb->expr()->eq('uid', $qb->createNamedParameter($uid)))
-                ->executeQuery()
-                ->fetch();
+                ->where($selectQb->expr()->eq('uid', $selectQb->createNamedParameter($uid)))
+                ->executeQuery();
+            $row = $result->fetch();
+            $result->closeCursor();
 
+            $ourBackend = self::class; // OCA\SynoLDAP\UserBackend\LdapUserBackend
+
+            // ── 2. Création ou mise à jour ────────────────────────────────────
             if ($row === false) {
-                // Premier login : crée l'entrée oc_users
-                $this->db->getQueryBuilder()
-                    ->insert('users')
-                    ->setValue('uid',         $qb->createNamedParameter($uid))
-                    ->setValue('uid_lower',   $qb->createNamedParameter(mb_strtolower($uid)))
-                    ->setValue('displayname', $qb->createNamedParameter(''))
-                    ->setValue('password',    $qb->createNamedParameter(''))
-                    ->setValue('backend',     $qb->createNamedParameter(self::class))
+                // Première connexion : crée l'entrée oc_users avec le bon backend
+                $insertQb = $this->db->getQueryBuilder();
+                $insertQb->insert('users')
+                    ->setValue('uid',         $insertQb->createNamedParameter($uid))
+                    ->setValue('uid_lower',   $insertQb->createNamedParameter(mb_strtolower($uid)))
+                    ->setValue('displayname', $insertQb->createNamedParameter(''))
+                    ->setValue('password',    $insertQb->createNamedParameter(''))
+                    ->setValue('backend',     $insertQb->createNamedParameter($ourBackend))
                     ->executeStatement();
-                $this->logger->info('[SynoLDAP] Entrée oc_users créée pour ' . $uid);
-            } elseif (($row['backend'] ?? '') !== self::class) {
-                // Backend incorrect (ex. user_ldap) → correction
+                $this->logger->info('[SynoLDAP] oc_users créé pour ' . $uid);
+            } elseif (($row['backend'] ?? '') !== $ourBackend) {
+                // Backend incorrect (ex. OCA\User_LDAP\User_Proxy) → correction
                 $old = $row['backend'] ?? '?';
-                $this->db->getQueryBuilder()
-                    ->update('users')
-                    ->set('backend', $qb->createNamedParameter(self::class))
-                    ->where($qb->expr()->eq('uid', $qb->createNamedParameter($uid)))
+                $updateQb = $this->db->getQueryBuilder();
+                $updateQb->update('users')
+                    ->set('backend', $updateQb->createNamedParameter($ourBackend))
+                    ->where($updateQb->expr()->eq('uid', $updateQb->createNamedParameter($uid)))
                     ->executeStatement();
-                $this->logger->info('[SynoLDAP] oc_users.backend corrigé pour ' . $uid . ' : ' . $old . ' → ' . self::class);
+                $this->logger->info('[SynoLDAP] oc_users.backend : ' . $old . ' → ' . $ourBackend . ' pour ' . $uid);
             }
         } catch (\Throwable $e) {
-            // La table n'a pas de colonne backend (NC < 26) ou autre erreur → non bloquant
-            $this->logger->debug('[SynoLDAP] ensureUserRow(' . $uid . '): ' . $e->getMessage());
+            // Colonne backend absente (NC < 26) ou contrainte unique → non bloquant
+            $this->logger->warning('[SynoLDAP] ensureUserRow(' . $uid . '): ' . $e->getMessage());
         }
     }
 
