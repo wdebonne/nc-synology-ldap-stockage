@@ -7,6 +7,74 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [2.0.33] — 2026-06-03
+
+### Fix définitif — NC AIO PostgreSQL : `oc_users.backend` inexistant
+
+#### Root cause confirmée par le log NC
+
+```
+[SynoLDAP] ensureUserRow(e.dupont):
+SQLSTATE[42703]: column "backend" does not exist
+```
+
+**NC AIO utilise PostgreSQL.** En PostgreSQL + NC 33, `oc_users` n'a **pas** de colonne
+`backend`. Toutes les tentatives `ensureUserRow()` (v2.0.29 à 2.0.32) échouaient silencieusement.
+NC 33 + PostgreSQL détermine le backend en **itérant tous les backends** via `userExists()`.
+
+#### Vraie cause des 401
+
+`known=1` n'était **pas garanti** dans `checkPassword()`. NC re-valide le token "Se souvenir
+de moi" toutes les 300s en appelant `checkPassword()`. Si le cache Redis avait expiré et
+LDAP était lent, `checkPassword()` retournait `false` → token invalidé → 401.
+
+En 2.0.32, `known=1` n'était posé que dans le listener PostLoginEvent — les re-checks de
+token (qui appellent `checkPassword()` sans re-déclencher PostLoginEvent) ne le posaient pas.
+
+#### Fix 2.0.33
+
+**`checkPassword()`** : pose `known=1` après TOUTE auth réussie (login ET re-check token).
+Avec Redis (3600s) + `known=1` en oc_preferences, `userExists()` ne touche plus jamais LDAP.
+
+**`UserLoggedInListener`** : suppression de `ensureUserRow()` + `IDBConnection` (incompatibles
+PostgreSQL). Filtre : `getBackendClassName() === 'SynoLDAP'`.
+
+---
+
+## [2.0.32] — 2026-06-03
+
+### Refactoring NC 33 — Isolation des transactions DB + diagnostic utilisateur
+
+#### Diagnostic : utilisateur correctement provisionné mais PROPFIND 401
+
+`occ user:info e.dupont` confirme : backend=SynoLDAP, enabled=true, storage OK.
+`oc_users.backend` est correct — la cause racine 401 est ailleurs.
+
+#### Root cause NC 33 : "dirty table reads"
+
+Le log `occ upgrade` révèle `"version": "33.0.3.2"`. NC 33 impose une isolation
+stricte des transactions DB. Les erreurs "dirty table reads" montrent que NC 33 bloque
+les lectures/écritures sur certaines tables (`oc_appconfig`, `oc_users`) quand elles
+sont impliquées dans une transaction active. Notre code dans `checkPassword()` qui appelait
+`setUserValue()`, `setAppValue()` et `ensureUserRow()` échouait silencieusement (try/catch).
+Conséquence : `known=1` n'était jamais posé → `userExists()` tombait sur LDAP à chaque
+validation de session → si LDAP est momentanément lent → 401.
+
+#### Fix : déplacement complet des ops DB vers PostLoginEvent (hors transaction)
+
+**`LdapUserBackend::checkPassword()`** :
+- Suppression de toutes les opérations DB (setUserValue, setAppValue, ensureUserRow)
+- Uniquement : cache Redis + authentification LDAP + cache Redis
+- Compatible NC 33 (aucune écriture DB dans le contexte de transaction d'auth)
+
+**`UserLoggedInListener`** :
+- Filtre remplacé : `known=1` → `getBackendClassName() === 'SynoLDAP'`
+  (plus fiable : fonctionne même si known=1 n'a pas encore été posé)
+- Injection de `IDBConnection` pour `ensureUserRow()`
+- Séquence : known=1 → ensureUserRow() → syncUser() (tout hors transaction NC)
+
+---
+
 ## [2.0.31] — 2026-06-03
 
 ### Fix — ensureUserRow() sur les cache hits credentials
@@ -27,7 +95,7 @@ garantissant que `oc_users.backend` est toujours correct quelle que soit la sour
 
 Console F12 confirme la cause racine :
 ```
-PROPFIND /remote.php/dav/files/e.berthy/ 401 (Unauthorized)
+PROPFIND /remote.php/dav/files/e.dupont/ 401 (Unauthorized)
 ```
 L'utilisateur est connecté (dashboard visible) mais le DAV retourne 401. La session NC
 fonctionne pour les pages HTML mais le middleware DAV de NC fait une vérification plus

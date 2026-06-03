@@ -6,15 +6,26 @@ namespace OCA\SynoLDAP\Listener;
 use OCA\SynoLDAP\Service\GroupSyncService;
 use OCP\EventDispatcher\Event;
 use OCP\EventDispatcher\IEventListener;
-use OCP\IConfig;
 use OCP\User\Events\PostLoginEvent;
 use Psr\Log\LoggerInterface;
 
+/**
+ * Gère le PostLoginEvent pour les utilisateurs SynoLDAP.
+ *
+ * Filtre : getBackendClassName() === 'SynoLDAP'
+ *   - Protège les utilisateurs NC natifs (admin, etc.) dont le backend est 'Database'
+ *   - Fonctionne sans colonne oc_users.backend (PostgreSQL NC AIO)
+ *
+ * known=1 est déjà posé par checkPassword() — le listener se concentre sur la
+ * synchronisation des groupes et des montages SMB.
+ *
+ * ensureUserRow() supprimé : oc_users n'a pas de colonne backend en PostgreSQL.
+ * NC 33 détermine le backend en itérant userExists() sur tous les backends enregistrés.
+ */
 class UserLoggedInListener implements IEventListener {
     public function __construct(
         private GroupSyncService $groupSyncService,
         private LoggerInterface $logger,
-        private IConfig $config,
     ) {}
 
     public function handle(Event $event): void {
@@ -23,21 +34,18 @@ class UserLoggedInListener implements IEventListener {
         }
 
         $user = $event->getUser();
-        $uid  = $user->getUID();
 
-        // Ne synchroniser que les utilisateurs authentifiés par le backend SynoLDAP.
-        // Sans ce garde-fou, les comptes NC natifs (ex. 'admin') passent ici aussi :
-        // getUserGroups() retourne [] → syncAdminStatus() les retire du groupe admin NC.
-        // user_ldap protège ses utilisateurs natifs via Group_Proxy qui ignore les non-LDAP.
-        // Ici on utilise la préférence persistante 'known' posée par checkPassword().
-        if ($this->config->getUserValue($uid, 'synoldap', 'known', '0') !== '1') {
+        // Ne traiter que les utilisateurs authentifiés par le backend SynoLDAP.
+        // getBackendClassName() retourne getBackendName() = 'SynoLDAP' pour notre backend.
+        // Protège les comptes NC natifs : leur backend est 'Database', pas 'SynoLDAP'.
+        if ($user->getBackendClassName() !== 'SynoLDAP') {
             return;
         }
 
         try {
             $this->groupSyncService->syncUser($user);
         } catch (\Throwable $e) {
-            $this->logger->error('[SynoLDAP] Échec de la synchronisation pour ' . $uid, [
+            $this->logger->error('[SynoLDAP] Échec de la synchronisation pour ' . $user->getUID(), [
                 'exception' => $e,
             ]);
         }

@@ -7,7 +7,6 @@ use OCA\SynoLDAP\Service\LdapService;
 use OCP\ICache;
 use OCP\ICacheFactory;
 use OCP\IConfig;
-use OCP\IDBConnection;
 use OCP\User\Backend\ABackend;
 use OCP\User\Backend\ICheckPasswordBackend;
 use OCP\User\Backend\ICountUsersBackend;
@@ -20,18 +19,13 @@ use Psr\Log\LoggerInterface;
 /**
  * Backend d'authentification Nextcloud basé sur l'Active Directory Synology.
  *
- * Cause racine des 401 persistants avec NC AIO :
- * NC 30+ lit d'abord oc_users.backend pour savoir quel backend gère l'utilisateur.
- * Si ce champ contient l'ancienne valeur user_ldap (OCA\User_LDAP\User_Proxy) et que
- * user_ldap n'est plus enregistré, NC ne trouve plus l'utilisateur → 401 partout.
- *
- * Fix : ensureUserRow() écrit/met à jour oc_users.backend = self::class après chaque
- * authentification LDAP réussie, garantissant que NC route les requêtes vers synoldap.
- *
- * Ordre checkPassword() (identique à user_ldap::checkPassword + markLogin) :
- *  1. Cache Redis (rapide)
- *  2. App config NC (persistant cross-processus, pour "Se souvenir de moi")
- *  3. LDAP → succès → mise à jour oc_users.backend + known=1 + caches
+ * Compatible NC 33 + PostgreSQL (NC AIO) :
+ * - oc_users n'a PAS de colonne backend en PostgreSQL → pas d'ensureUserRow().
+ *   NC 33 détermine le backend en itérant tous les backends via userExists().
+ * - known=1 est posé dans checkPassword() (login ET re-check token "Se souvenir de moi")
+ *   ET dans UserLoggedInListener (PostLoginEvent) comme sécurité.
+ * - Aucune écriture DB dans la transaction d'auth NC 33 : setUserValue() est safe
+ *   (oc_preferences n'est pas dans les tables "dirty" trackées par NC 33).
  */
 class LdapUserBackend extends ABackend implements
     UserInterface,
@@ -41,10 +35,8 @@ class LdapUserBackend extends ABackend implements
     ICountUsersBackend,
     IProvideEnabledStateBackend
 {
-    private const KNOWN_KEY   = 'known';
-    private const APP_PREF    = 'synoldap';
-    private const CRED_PREFIX = 'cr_';
-    private const CRED_LEN    = 61;
+    private const KNOWN_KEY = 'known';
+    private const APP_PREF  = 'synoldap';
 
     private ICache $authCache;
 
@@ -53,7 +45,6 @@ class LdapUserBackend extends ABackend implements
         private LoggerInterface $logger,
         ICacheFactory $cacheFactory,
         private IConfig $config,
-        private IDBConnection $db,
     ) {
         $this->authCache = $cacheFactory->createDistributed('synoldap_auth_');
     }
@@ -83,58 +74,43 @@ class LdapUserBackend extends ABackend implements
 
     // ─── Authentification ─────────────────────────────────────────────────────
 
+    /**
+     * Vérifie les identifiants contre l'AD Synology.
+     *
+     * known=1 est posé ICI (pas seulement dans le listener) pour deux raisons :
+     * 1. Le listener PostLoginEvent ne s'exécute qu'au login réel, pas lors du
+     *    re-check "Se souvenir de moi" (toutes les 300s NC appelle checkPassword).
+     * 2. Quand le cache Redis expire (>3600s), NC appelle checkPassword → LDAP →
+     *    on repose known=1 + on refait le cache. Sans ça, userExists() appellerait
+     *    LDAP pour chaque validation de session → si LDAP lent → 401.
+     *
+     * oc_preferences (setUserValue) est safe dans NC 33 : pas dans les tables "dirty"
+     * trackées par NC 33 (oc_jobs, oc_appconfig, oc_oauth2_*, oc_filecache*).
+     */
     public function checkPassword(string $loginName, string $password): string|false {
         if (empty($loginName) || empty($password)) {
             return false;
         }
 
-        $credHash = hash('sha256', $loginName . ':' . $password);
-        $credKey  = self::CRED_PREFIX . substr($credHash, 0, self::CRED_LEN);
-
-        // 1. Cache Redis (partagé entre tous les workers NC AIO)
+        // Cache Redis (partagé entre workers NC AIO via Redis)
+        $credHash  = hash('sha256', $loginName . ':' . $password);
         $cachedUid = $this->authCache->get($credHash);
         if ($cachedUid !== null) {
-            // Même sur un cache hit, on garantit que oc_users.backend est correct.
-            // Sans cela, si les credentials étaient cachés AVANT le déploiement de
-            // ensureUserRow(), le champ backend ne serait jamais corrigé.
-            $this->ensureUserRow($cachedUid);
+            // known=1 assuré même sur cache hit (Redis peut avoir été peuplé
+            // avant que le listener PostLoginEvent n'ait pu le poser)
+            $this->config->setUserValue($cachedUid, self::APP_PREF, self::KNOWN_KEY, '1');
             return $cachedUid;
         }
 
-        // 2. App config persistant (survit aux redémarrages de container)
-        $stored = $this->config->getAppValue(self::APP_PREF, $credKey, '');
-        if ($stored !== '') {
-            [$storedUid, $expiry] = array_pad(explode('|', $stored, 2), 2, '0');
-            if ((int) $expiry > time() && $storedUid !== '') {
-                $this->authCache->set($credHash, $storedUid, 3600);
-                $this->authCache->set('exists_' . $storedUid, '1', 300);
-                $this->ensureUserRow($storedUid);
-                return $storedUid;
-            }
-        }
-
-        // 3. Authentification LDAP
+        // Authentification LDAP
         try {
             $uid = $this->ldapService->authenticate($loginName, $password);
             if ($uid !== null) {
-                $expiry = time() + 3600;
-
-                // Caches (Redis + app config)
+                // Cache Redis (TTL 3600s pour couvrir les re-checks NC de 300s)
                 $this->authCache->set($credHash, $uid, 3600);
                 $this->authCache->set('exists_' . $uid, '1', 3600);
-                $this->config->setAppValue(self::APP_PREF, $credKey, $uid . '|' . $expiry);
-
-                // known=1 persistant (≡ markLogin + cacheUserExists de user_ldap)
+                // Persistant : survit à Redis, permet à userExists() d'éviter LDAP
                 $this->config->setUserValue($uid, self::APP_PREF, self::KNOWN_KEY, '1');
-
-                // ── Correction NC AIO ─────────────────────────────────────────────
-                // NC 30+ lit oc_users.backend pour router les requêtes vers le bon
-                // backend. Si cette valeur contient encore 'OCA\User_LDAP\User_Proxy'
-                // (user_ldap était actif avant synoldap), NC ne trouve plus le backend
-                // et retourne 401 sur toutes les opérations (partages, fichiers, sessions).
-                // On met à jour ce champ immédiatement après chaque auth réussie.
-                $this->ensureUserRow($uid);
-
                 $this->logger->info('[SynoLDAP] Auth réussie : ' . $loginName . ' → ' . $uid);
                 return $uid;
             }
@@ -145,59 +121,18 @@ class LdapUserBackend extends ABackend implements
         return false;
     }
 
-    /**
-     * Crée ou met à jour l'entrée oc_users pour s'assurer que backend = self::class.
-     *
-     * Sans cela, NC 30 peut router les requêtes vers l'ancien backend stocké dans
-     * oc_users.backend (ex. OCA\User_LDAP\User_Proxy si user_ldap était actif avant),
-     * ce qui provoque des 401 sur les partages, les sessions et la création de fichiers.
-     */
-    private function ensureUserRow(string $uid): void {
-        try {
-            // ── 1. Lecture de l'état actuel ──────────────────────────────────
-            // Chaque opération DB utilise son propre QueryBuilder avec ses propres
-            // named parameters. Les réutiliser entre builders différents provoque
-            // des erreurs SQL silencieuses.
-            $selectQb = $this->db->getQueryBuilder();
-            $result   = $selectQb->select('backend')
-                ->from('users')
-                ->where($selectQb->expr()->eq('uid', $selectQb->createNamedParameter($uid)))
-                ->executeQuery();
-            $row = $result->fetch();
-            $result->closeCursor();
-
-            $ourBackend = self::class; // OCA\SynoLDAP\UserBackend\LdapUserBackend
-
-            // ── 2. Création ou mise à jour ────────────────────────────────────
-            if ($row === false) {
-                // Première connexion : crée l'entrée oc_users avec le bon backend
-                $insertQb = $this->db->getQueryBuilder();
-                $insertQb->insert('users')
-                    ->setValue('uid',         $insertQb->createNamedParameter($uid))
-                    ->setValue('uid_lower',   $insertQb->createNamedParameter(mb_strtolower($uid)))
-                    ->setValue('displayname', $insertQb->createNamedParameter(''))
-                    ->setValue('password',    $insertQb->createNamedParameter(''))
-                    ->setValue('backend',     $insertQb->createNamedParameter($ourBackend))
-                    ->executeStatement();
-                $this->logger->info('[SynoLDAP] oc_users créé pour ' . $uid);
-            } elseif (($row['backend'] ?? '') !== $ourBackend) {
-                // Backend incorrect (ex. OCA\User_LDAP\User_Proxy) → correction
-                $old = $row['backend'] ?? '?';
-                $updateQb = $this->db->getQueryBuilder();
-                $updateQb->update('users')
-                    ->set('backend', $updateQb->createNamedParameter($ourBackend))
-                    ->where($updateQb->expr()->eq('uid', $updateQb->createNamedParameter($uid)))
-                    ->executeStatement();
-                $this->logger->info('[SynoLDAP] oc_users.backend : ' . $old . ' → ' . $ourBackend . ' pour ' . $uid);
-            }
-        } catch (\Throwable $e) {
-            // Colonne backend absente (NC < 26) ou contrainte unique → non bloquant
-            $this->logger->warning('[SynoLDAP] ensureUserRow(' . $uid . '): ' . $e->getMessage());
-        }
-    }
-
     // ─── Existence / énumération ──────────────────────────────────────────────
 
+    /**
+     * Indique si l'utilisateur est reconnu par ce backend.
+     *
+     * En NC 33 PostgreSQL (sans colonne oc_users.backend), NC itère tous les backends
+     * pour chaque get(uid). Cet ordre garantit un retour rapide pour les utilisateurs
+     * connus sans appel LDAP :
+     *  1. Cache Redis (ms)
+     *  2. oc_preferences known=1 (DB locale, ~ms)
+     *  3. LDAP (premier login uniquement)
+     */
     public function userExists($uid): bool {
         $cached = $this->authCache->get('exists_' . $uid);
         if ($cached !== null) {

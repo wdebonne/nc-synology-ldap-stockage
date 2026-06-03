@@ -5,7 +5,7 @@
 [![Nextcloud](https://img.shields.io/badge/Nextcloud-25--33-0082c9?logo=nextcloud)](https://nextcloud.com)
 [![PHP](https://img.shields.io/badge/PHP-8.1%2B-777bb4?logo=php)](https://php.net)
 [![Licence](https://img.shields.io/badge/Licence-AGPL--3.0-green)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.0.31-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/Version-2.0.33-blue)](CHANGELOG.md)
 
 ---
 
