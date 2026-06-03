@@ -7,6 +7,33 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [2.0.27] — 2026-06-03
+
+### Correction critique — Impossible de créer des fichiers/dossiers avec les utilisateurs LDAP
+
+Audit de la création de session utilisateur entre `user_ldap` et `synoldap` révèle deux bugs architecturaux distincts.
+
+#### Bug 1 — Provisionnement NC jamais déclenché (cause principale)
+
+- **Cause** : `checkPassword()` posait `known=1` dans `oc_preferences` ET remplissait le cache `exists_` **avant** que Nextcloud ait eu le temps d'auto-provisionner l'utilisateur. Lors du premier login, NC appelle `userExists()` immédiatement après `checkPassword()` pour créer l'entrée `oc_users` et `oc_accounts`. Si `exists_` est déjà en cache, `userExists()` retourne `true` instantanément — NC croit l'utilisateur déjà entièrement provisionné → **ne crée jamais `oc_users` ni `oc_accounts`** → home directory jamais initialisé correctement → impossible de créer des fichiers ou dossiers.
+- **Fix** : `checkPassword()` ne pose plus `known=1` ni le cache `exists_`. Seul `userExists()` les pose, **après** confirmation LDAP. Cela laisse NC appeler LDAP via `userExists()` au premier login → confirmation → provisionnement complet → **puis** `known=1` est posé pour les appels suivants.
+
+#### Bug 2 — `getHome()` non implémentée (cause secondaire)
+
+- **Cause** : `user_ldap` déclare explicitement `Backend::GET_HOME` et implémente `getHome()`. NC utilise cette méthode pour initialiser le stockage home lors de la création du compte. Sans `IGetHomeBackend`, NC peut utiliser un chemin par défaut incorrect ou ignorer l'initialisation du stockage.
+- **Fix** : Implémentation de `IGetHomeBackend` avec `getHome()` qui retourne `{datadirectory}/{uid}`. Même comportement que `user_ldap` sans attribut home LDAP configuré.
+
+#### Résumé des changements dans `LdapUserBackend`
+
+| | Avant | Après |
+|---|---|---|
+| `checkPassword()` | Pose `known=1` + `exists_` | Pose uniquement le cache credentials |
+| `userExists()` | Peut retourner true avant provisionnement | Retourne true seulement APRÈS LDAP confirme + `known=1` |
+| `getHome()` | Non implémentée | Implémentée via `IGetHomeBackend` |
+| Provisionnement NC | Souvent ignoré (cache prématuré) | Toujours déclenché au premier login |
+
+---
+
 ## [2.0.26] — 2026-06-03
 
 ### Correction — "Se souvenir de moi" impossible + aucun fichier en session
