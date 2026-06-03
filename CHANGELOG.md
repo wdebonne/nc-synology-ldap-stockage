@@ -7,6 +7,27 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [2.0.34] — 2026-06-03
+
+### Diagnostic confirmé — Cause réelle du 401
+
+```
+"app":"webdav","message":"Cannot authenticate over ajax calls"
+Auth.php:205 — Sabre\DAV\Exception\NotAuthenticated
+```
+
+Le 401 ne vient PAS de synoldap mais de NC 33 qui bloque les requêtes DAV AJAX depuis le
+navigateur quand soit (a) le token CSRF est invalide, soit (b) la 2FA est requise mais non
+complétée pour la session courante.
+
+**Fix `StorageConfigService::doMount()`** : n'appelle `updateStorage()` que si la
+configuration a réellement changé. Sans ce garde, chaque login déclenchait une écriture
+dans `oc_external_storages` → mise à jour du cache `oc_mounts` → dirty table reads NC 33
+→ `SetupManager::setupForUser()` rate partiellement dans le même processus PHP → peut
+contribuer à l'invalidation du token CSRF (session state incohérent).
+
+---
+
 ## [2.0.33] — 2026-06-03
 
 ### Fix définitif — NC AIO PostgreSQL : `oc_users.backend` inexistant

@@ -222,10 +222,20 @@ class StorageConfigService {
             ];
 
             if ($existingMount !== null) {
-                $existingMount->setBackendOptions($backendOptions);
-                $existingMount->setAuthOptions($authOptions);
-                $storagesService->updateStorage($existingMount);
-                $action = 'mis à jour';
+                // NC 33 : n'écrire dans oc_external_storages que si la config a changé.
+                // Sans ce garde, updateStorage() est appelé à chaque login → écrit dans
+                // oc_mounts via le cache → dirty table reads → SetupManager::setupForUser()
+                // rate partiellement → PROPFIND retourne 401 dans le même processus PHP.
+                $existingOptions = $existingMount->getBackendOptions();
+                $existingAuth    = $existingMount->getAuthOptions();
+                if ($existingOptions !== $backendOptions || $existingAuth !== $authOptions) {
+                    $existingMount->setBackendOptions($backendOptions);
+                    $existingMount->setAuthOptions($authOptions);
+                    $storagesService->updateStorage($existingMount);
+                    $action = 'mis à jour';
+                } else {
+                    $action = 'inchangé';
+                }
             } else {
                 $storageConfig = new \OCA\Files_External\Lib\StorageConfig();
                 $storageConfig->setMountPoint(ltrim($mountPoint, '/'));
