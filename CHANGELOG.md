@@ -7,6 +7,24 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [2.0.26] — 2026-06-03
+
+### Correction — "Se souvenir de moi" impossible + aucun fichier en session
+
+Audit complet du flow NC "remember me" et du flow de synchro groupes :
+
+#### Bug 1 — Connexion impossible avec "Se souvenir de moi"
+
+- **Cause** : NC re-valide le token "Se souvenir de moi" toutes les **300 secondes** en appelant `checkPassword($login, $password)` avec les credentials stockés dans le token. Le cache distribué de `checkPassword()` avait un TTL de **360 secondes** — trop proche de l'intervalle NC. Entre deux re-checks, le cache pouvait expirer, forçant un appel LDAP. Si LDAP répondait lentement à ce moment précis, `checkPassword()` retournait `false` → NC invalidait le token → **déconnexion silencieuse**.
+- **Fix** : TTL du cache `checkPassword()` porté à **3600 secondes (1 heure)**. LDAP n'est désormais consulté qu'une fois par heure lors des re-validations de token, identique au comportement du cache de connexion `user_ldap`. Entre ces consultations, NC trouve toujours le résultat en cache → token préservé → "Se souvenir de moi" fonctionne.
+
+#### Bug 2 — Aucun fichier disponible en session
+
+- **Cause** : Si LDAP était lent ou indisponible au moment du `PostLoginEvent`, `getUserGroups()` levait une exception → `syncUser()` s'arrêtait immédiatement → **aucun groupe NC créé, aucun montage SMB créé** → l'utilisateur voyait un Nextcloud vide. Pour un premier login, ce vide était permanent jusqu'à une reconnexion avec LDAP disponible.
+- **Fix** : `syncUser()` stocke les groupes dans `oc_preferences` (`synoldap/last_groups`) après chaque synchronisation LDAP réussie. Si LDAP échoue au login suivant, les groupes du dernier sync réussi sont utilisés comme fallback → les montages SMB existants restent visibles → l'utilisateur conserve ses fichiers.
+
+---
+
 ## [2.0.25] — 2026-06-02
 
 ### Correction — Admin natif perd son groupe / utilisateur sans fichiers après login

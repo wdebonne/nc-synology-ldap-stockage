@@ -59,9 +59,22 @@ class GroupSyncService {
 
         try {
             $ldapGroups = $this->ldapService->getUserGroups($uid);
+            // Mise en cache persistante des groupes dans oc_preferences.
+            // Si LDAP est indisponible au prochain login, on utilisera cette liste
+            // pour maintenir les groupes NC et les montages SMB existants.
+            $this->config->setUserValue($uid, self::APP_ID, 'last_groups', json_encode($ldapGroups));
         } catch (\Throwable $e) {
             $this->logger->warning("[SynoLDAP] Groupes LDAP inaccessibles pour {$uid}: " . $e->getMessage());
-            return;
+            // Fallback : utiliser les groupes du dernier sync réussi.
+            // Sans ce fallback, une indisponibilité LDAP au moment du PostLoginEvent
+            // supprimerait tous les montages SMB et l'utilisateur verrait "aucun fichier".
+            $cached = $this->config->getUserValue($uid, self::APP_ID, 'last_groups', '');
+            if ($cached === '') {
+                $this->logger->warning("[SynoLDAP] Aucun groupe en cache pour {$uid} — sync abandonnée");
+                return;
+            }
+            $ldapGroups = json_decode($cached, true) ?? [];
+            $this->logger->info("[SynoLDAP] {$uid} → groupes depuis cache (LDAP indisponible): " . implode(', ', $ldapGroups));
         }
 
         $this->logger->info("[SynoLDAP] {$uid} → groupes AD: " . implode(', ', $ldapGroups));

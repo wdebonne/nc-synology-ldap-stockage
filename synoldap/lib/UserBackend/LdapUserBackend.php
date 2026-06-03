@@ -79,8 +79,12 @@ class LdapUserBackend extends ABackend implements
                 // Même rôle que ldap_user_mapping dans user_ldap : userExists() n'a plus
                 // besoin du LDAP pour cet utilisateur, quelle que soit la durée de session.
                 $this->config->setUserValue($uid, self::APP_PREF, self::KNOWN_KEY, '1');
-                $this->authCache->set($cacheKey, $uid, 360);
-                $this->authCache->set('exists_' . $uid, '1', 360);
+                // TTL 3600s : NC re-valide les tokens "Se souvenir de moi" toutes les 300s.
+                // Avec 360s, le cache expirait entre deux re-checks → LDAP appelé → si LDAP
+                // lent, le token était invalidé et l'utilisateur déconnecté. Avec 3600s (1h),
+                // LDAP n'est consulté qu'une fois par heure, identique au cache de user_ldap.
+                $this->authCache->set($cacheKey, $uid, 3600);
+                $this->authCache->set('exists_' . $uid, '1', 3600);
                 return $uid;
             }
         } catch (\Throwable $e) {
