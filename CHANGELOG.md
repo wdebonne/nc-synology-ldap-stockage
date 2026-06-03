@@ -7,6 +7,33 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [2.0.35] — 2026-06-03
+
+### Correction définitive — "Cannot authenticate over ajax calls" (PROPFIND 401)
+
+#### Cause racine confirmée par le code source NC 33
+
+```
+Auth.php:31  public const DAV_AUTHENTICATED = 'AUTHENTICATED_TO_DAV_BACKEND';
+Auth.php:85  $this->session->set(self::DAV_AUTHENTICATED, uid);  // posé après auth DAV réussie
+Auth.php:163 $forcedLogout = false;
+Auth.php:169 $forcedLogout = true;  // si DAV_AUTHENTICATED ≠ uid courant
+Auth.php:176 if ($forcedLogout) { $this->userSession->logout(); }
+```
+
+**Scénario exact :**
+1. Un premier utilisateur (ex. admin) fait un PROPFIND réussi → `DAV_AUTHENTICATED = 'admin'`
+2. e.berthy (utilisateur LDAP) se connecte → NC 33 régénère l'ID de session mais **copie** toutes les données de l'ancienne session, dont `DAV_AUTHENTICATED = 'admin'`
+3. PROPFIND d'e.berthy : Auth.php line 169 détecte `'admin' ≠ 'e.berthy'` → `forcedLogout = true`
+4. NC déconnecte e.berthy en cours de traitement du PROPFIND
+5. `parent::check()` (Basic Auth) échoue → requête AJAX → `throw NotAuthenticated('Cannot authenticate over ajax calls')` → **401**
+
+Les utilisateurs natifs NC (admin) ne sont PAS affectés car notre `UserLoggedInListener` ne s'exécute que pour `getBackendClassName() === 'SynoLDAP'`. L'administrateur natif utilise également une auth par token d'app pour le client desktop, qui contourne le check de session DAV.
+
+**Fix** : `UserLoggedInListener` supprime `DAV_AUTHENTICATED` de la session dès le `PostLoginEvent`. La prochaine fois que NC's Auth.php s'exécute (PROPFIND), `is_null(DAV_AUTHENTICATED) = true` → condition 1 valide → auth réussit.
+
+---
+
 ## [2.0.34] — 2026-06-03
 
 ### Diagnostic confirmé — Cause réelle du 401
