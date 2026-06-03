@@ -94,6 +94,10 @@ class LdapUserBackend extends ABackend implements
         // 1. Cache Redis (partagé entre tous les workers NC AIO)
         $cachedUid = $this->authCache->get($credHash);
         if ($cachedUid !== null) {
+            // Même sur un cache hit, on garantit que oc_users.backend est correct.
+            // Sans cela, si les credentials étaient cachés AVANT le déploiement de
+            // ensureUserRow(), le champ backend ne serait jamais corrigé.
+            $this->ensureUserRow($cachedUid);
             return $cachedUid;
         }
 
@@ -104,6 +108,7 @@ class LdapUserBackend extends ABackend implements
             if ((int) $expiry > time() && $storedUid !== '') {
                 $this->authCache->set($credHash, $storedUid, 3600);
                 $this->authCache->set('exists_' . $storedUid, '1', 300);
+                $this->ensureUserRow($storedUid);
                 return $storedUid;
             }
         }

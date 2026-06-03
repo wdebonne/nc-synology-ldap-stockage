@@ -7,6 +7,20 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [2.0.31] — 2026-06-03
+
+### Fix — ensureUserRow() sur les cache hits credentials
+
+`ensureUserRow()` n'était appelé que lors d'une authentification LDAP fraîche. Si les
+credentials étaient déjà en cache Redis (session précédente, TTL 3600s), `checkPassword()`
+retournait le UID en cache sans jamais appeler `ensureUserRow()`. Résultat : `oc_users.backend`
+pouvait rester incorrect entre les déploiements.
+
+Fix : `ensureUserRow()` est maintenant appelé même sur un cache hit (Redis ou app config),
+garantissant que `oc_users.backend` est toujours correct quelle que soit la source du UID.
+
+---
+
 ## [2.0.30] — 2026-06-03
 
 ### Correction — Bug critique dans ensureUserRow() (QueryBuilder réutilisé)
