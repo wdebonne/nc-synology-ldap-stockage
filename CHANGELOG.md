@@ -7,6 +7,61 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [3.0.0] — 2026-06-03
+
+### Refactoring majeur — synoldap devient un companion app pour user_ldap
+
+#### Constat
+
+Malgré 35 versions correctives successives, les bugs persistaient :
+- "Cannot authenticate over ajax calls" → `DAV_AUTHENTICATED` hérité d'une session précédente
+- Dirty table reads NC 33 → writes DB dans la transaction d'auth
+- Gestion de session, CSRF, `known=1`, `ensureUserRow()`... autant de problèmes propres à
+  l'implémentation d'un backend utilisateur custom qui lutte contre les internals de NC 33.
+
+La cause profonde : **réimplémenter un backend utilisateur NC complet est trop complexe**.
+NC 33 a des exigences très strictes (transactions DB, session management, DAV auth) que
+user_ldap respecte nativement après des années de développement.
+
+#### Nouvelle architecture
+
+synoldap ne gère **plus** l'authentification. user_ldap reste installé et configuré pour
+l'Active Directory Synology — il fonctionne parfaitement.
+
+synoldap devient un **companion app** qui ajoute les fonctionnalités Synology-spécifiques :
+
+| Qui fait quoi | Avant (v2.x) | Après (v3.0) |
+|---|---|---|
+| Authentification LDAP | LdapUserBackend (custom) | **user_ldap** (officiel) |
+| Session / DAV_AUTHENTICATED | Notre code (bugué) | **user_ldap** (stable) |
+| home directory, userExists | Notre code | **user_ldap** |
+| Sync groupes AD → NC | Notre code | **Notre code** (inchangé) |
+| Montages SMB | Notre code | **Notre code** (inchangé) |
+| API Synology ACL | Notre code | **Notre code** (inchangé) |
+
+#### Changements techniques
+
+**`Application.php`** : suppression de `$userManager->registerBackend($backend)`. Plus aucun
+backend utilisateur enregistré — uniquement le listener PostLoginEvent.
+
+**`UserLoggedInListener`** : filtre `getBackendClassName() === 'LDAP'` (user_ldap retourne
+'LDAP' depuis `getBackendName()`). Les comptes NC natifs (Database) sont toujours ignorés.
+Suppression de `ISession`, `IDBConnection`, DAV_AUTHENTICATED manipulation — tout cela est
+géré correctement par user_ldap.
+
+**`LdapUserBackend.php`** : gardé dans les sources mais plus enregistré. Peut être réactivé
+si user_ldap est absent.
+
+#### Prérequis
+
+user_ldap doit être installé et configuré :
+- Hôte LDAP : IP du Synology
+- Filtre utilisateur : `objectClass=user`
+- Attribut login : `sAMAccountName`
+- Groupes : optionnel (synoldap les gère via sa propre connexion LDAP)
+
+---
+
 ## [2.0.35] — 2026-06-03
 
 ### Correction définitive — "Cannot authenticate over ajax calls" (PROPFIND 401)
