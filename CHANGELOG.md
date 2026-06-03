@@ -7,6 +7,31 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [2.0.29] — 2026-06-03
+
+### Correction critique — NC AIO : 401 partages, "Se souvenir de moi", création de fichiers
+
+#### Cause racine identifiée avec NC AIO + Redis
+
+NC 30+ (utilisé dans NC AIO) lit `oc_users.backend` pour déterminer quel backend PHP gère un utilisateur avant d'appeler `IUserManager::get()`. Si ce champ contient `OCA\User_LDAP\User_Proxy` (valeur laissée par user_ldap qui était peut-être actif ou testé avant synoldap), NC tente de charger user_ldap — non enregistré — ne trouve pas le backend et retourne `null` depuis `get()`. Résultat : **401 sur tous les appels API** (partages, sessions, création de fichiers), même si la session a été créée correctement.
+
+Ce mécanisme n'existait pas dans les versions NC < 30 : NC itérait toujours tous les backends. En NC 30, l'optimisation par backend stocké en DB rend le champ `oc_users.backend` critique.
+
+#### Fix : `ensureUserRow()` dans `checkPassword()`
+
+Après chaque authentification LDAP réussie, `ensureUserRow(uid)` :
+- Si aucune entrée `oc_users` n'existe → la crée avec `backend = 'OCA\SynoLDAP\UserBackend\LdapUserBackend'`
+- Si une entrée existe avec un backend incorrect (ex. `OCA\User_LDAP\User_Proxy`) → la met à jour
+
+Après cette correction, NC route correctement toutes les requêtes vers synoldap, résolvant d'un coup :
+- **401 sur les partages** : NC trouve maintenant le bon backend pour valider la session
+- **"Se souvenir de moi"** : le token est validé par le bon backend
+- **Création de fichiers/dossiers** : la session est stable, le home est initialisé correctement
+
+`IDBConnection` est injecté dans `LdapUserBackend` pour les opérations DB directes.
+
+---
+
 ## [2.0.28] — 2026-06-03
 
 ### Refactoring backend — Parité fonctionnelle complète avec user_ldap
