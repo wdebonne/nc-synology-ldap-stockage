@@ -7,6 +7,38 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [2.0.28] — 2026-06-03
+
+### Refactoring backend — Parité fonctionnelle complète avec user_ldap
+
+Audit ligne par ligne de `user_ldap::checkPassword()` et `user_ldap::User::markLogin()` révèle trois causes racines distinctes des bugs persistants.
+
+#### Cause 1 — Cache credential APCu (par processus PHP) → "Se souvenir de moi" rompu
+
+`ICacheFactory::createDistributed()` utilise APCu si Redis/Memcache n'est pas configuré. APCu est **par processus PHP** : chaque worker FPM a son propre cache. Le cache de 3600s posé par `checkPassword()` dans le processus A n'existe pas dans le processus B qui traite le re-check "Se souvenir de moi" (toutes les 300s) → LDAP appelé → si lent → token invalidé.
+
+**Fix** : double cache credentials :
+- Cache distribué (rapide, même processus)
+- **App config NC** `cr_<hash>` (DB-backed, persistant, partagé entre tous les processus PHP) → stocke `uid|timestamp_expiry`. user_ldap n'en a pas besoin car son LDAP est toujours rapide ; synoldap peut être sur un NAS distant.
+
+#### Cause 2 — `known=1` retiré de `checkPassword()` en 2.0.27 (régression)
+
+En 2.0.27, `known=1` avait été retiré de `checkPassword()` pour "ne pas bloquer l'auto-provisionnement". L'auto-provisionnement (`oc_accounts`) est en réalité **lazily créé** par NC indépendamment de `userExists()` — retirer `known=1` ne servait à rien et introduisait une fragilité : premier appel à `userExists()` sans `known=1` → LDAP obligatoire → si LDAP lent → session invalide.
+
+**Fix** : `checkPassword()` pose à nouveau `known=1` immédiatement après auth réussie, exactement comme `user_ldap::markLogin()` + `user_ldap::cacheUserExists()`.
+
+#### Cause 3 — `getHome()` appelait `userExists()` de manière non optimisée
+
+`getHome()` appelait `userExists()` qui pouvait appeler LDAP pour des utilisateurs dont le cache distribué était vide (nouveau processus PHP). Sur des instances sans Redis, cela forçait un aller-retour LDAP à chaque initialisation du home storage.
+
+**Fix** : `getHome()` vérifie d'abord le cache distribué, puis `oc_preferences[known]`, et n'appelle `userExists()` (LDAP) que pour les utilisateurs complètement inconnus.
+
+#### Nettoyage — `deleteUser()` supprime les données synoldap
+
+`deleteUser()` supprime maintenant `known=1` et vide le cache distribué, évitant qu'un utilisateur supprimé de NC reste reconnu par le backend.
+
+---
+
 ## [2.0.27] — 2026-06-03
 
 ### Correction critique — Impossible de créer des fichiers/dossiers avec les utilisateurs LDAP

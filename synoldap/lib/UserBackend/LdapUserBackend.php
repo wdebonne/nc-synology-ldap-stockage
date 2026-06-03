@@ -19,20 +19,27 @@ use Psr\Log\LoggerInterface;
 /**
  * Backend d'authentification Nextcloud basé sur l'Active Directory Synology.
  *
- * Reproduction fidèle des capacités déclarées par user_ldap :
+ * Logique identique à user_ldap :
  *
- *  GET_HOME  — NC appelle getHome() pour initialiser le stockage de l'utilisateur.
- *              Sans cette déclaration, NC peut ne pas créer l'entrée oc_accounts /
- *              oc_users correctement au premier login, ce qui empêche la création de
- *              dossiers et fichiers.
+ * checkPassword() :
+ *   - Valide les credentials contre LDAP
+ *   - Pose immédiatement known=1 (≡ markLogin() + cacheUserExists() de user_ldap)
+ *   - Met en cache les credentials dans deux couches :
+ *       • Cache distribué (rapide, mais APCu = par processus PHP)
+ *       • App config NC (persistant, DB-backed, survit aux redémarrages PHP/APCu)
+ *     → couvre le re-check "Se souvenir de moi" (toutes les 300s) même avec cache froid
  *
- *  known     — Stocké dans oc_preferences UNIQUEMENT par userExists() après confirmation
- *              LDAP, jamais par checkPassword(). Cela permet à NC d'auto-provisionner
- *              l'utilisateur (oc_users + oc_accounts) lors du premier appel à
- *              userExists() avant que la préférence n'existe.
+ * userExists() :
+ *   - Cache distribué → oc_preferences (known=1) → LDAP (uniquement si inconnu)
+ *   - Après known=1 posé par checkPassword, JAMAIS d'appel LDAP pour cet utilisateur
  *
- *  Credential cache (checkPassword) — TTL 3600s pour couvrir les re-checks "Se souvenir
- *              de moi" de NC (toutes les 300s). user_ldap utilise le même principe.
+ * getHome() :
+ *   - Retourne directement {datadirectory}/{uid} si known=1 ou cache chaud
+ *   - N'appelle PAS userExists() dans le chemin rapide → pas de dépendance LDAP
+ *
+ * deleteUser() :
+ *   - Nettoie known=1 et le cache persistant pour éviter qu'un utilisateur supprimé
+ *     soit encore reconnu par le backend
  */
 class LdapUserBackend extends ABackend implements
     UserInterface,
@@ -42,8 +49,11 @@ class LdapUserBackend extends ABackend implements
     ICountUsersBackend,
     IProvideEnabledStateBackend
 {
-    private const KNOWN_KEY = 'known';
-    private const APP_PREF  = 'synoldap';
+    private const KNOWN_KEY   = 'known';
+    private const APP_PREF    = 'synoldap';
+    // Longueur du fragment de hash utilisé comme clé app config (64 chars max, préfixe inclus).
+    private const CRED_PREFIX = 'cr_';
+    private const CRED_LEN    = 61; // len('cr_') + 61 = 64
 
     private ICache $authCache;
 
@@ -63,20 +73,30 @@ class LdapUserBackend extends ABackend implements
     // ─── Home directory ───────────────────────────────────────────────────────
 
     /**
-     * Retourne le chemin du répertoire home de l'utilisateur.
+     * Retourne le chemin home de l'utilisateur (≡ user_ldap::getHome).
      *
-     * user_ldap déclare Backend::GET_HOME et implémente getHome() — c'est ce qui
-     * permet à NC d'initialiser correctement le stockage (oc_accounts, oc_users,
-     * home storage) au premier login. Sans cette méthode, NC peut ignorer le
-     * provisionnement et l'utilisateur se retrouve sans home → impossible de créer
-     * des fichiers ou dossiers.
+     * user_ldap déclare GET_HOME et l'implémente — NC utilise cette méthode pour
+     * initialiser le stockage home au premier login (oc_accounts, home storage).
+     *
+     * Chemin rapide : si l'utilisateur est connu (known=1 ou cache), on ne touche
+     * pas LDAP. Seuls les utilisateurs complètement inconnus déclenchent une vérif.
      */
     public function getHome(string $uid): string|false {
-        if (!$this->userExists($uid)) {
-            return false;
-        }
         $dataDir = rtrim((string) $this->config->getSystemValue('datadirectory', ''), '/');
         if ($dataDir === '') {
+            return false;
+        }
+
+        // Chemin rapide : cache ou oc_preferences
+        if ($this->authCache->get('exists_' . $uid) === '1') {
+            return $dataDir . '/' . $uid;
+        }
+        if ($this->config->getUserValue($uid, self::APP_PREF, self::KNOWN_KEY, '0') === '1') {
+            return $dataDir . '/' . $uid;
+        }
+
+        // Chemin lent : vérifie LDAP uniquement si l'utilisateur est totalement inconnu
+        if (!$this->userExists($uid)) {
             return false;
         }
         return $dataDir . '/' . $uid;
@@ -86,40 +106,61 @@ class LdapUserBackend extends ABackend implements
 
     /**
      * Vérifie les identifiants contre l'AD Synology.
-     * Retourne le UID Nextcloud (= sAMAccountName) en cas de succès, false sinon.
      *
-     * IMPORTANT — ordre intentionnel :
-     *  checkPassword() met en cache les credentials (TTL 3600s) mais NE pose PAS
-     *  "known=1" dans oc_preferences et NE remplit PAS le cache exists_.
-     *
-     *  Pourquoi ? Au premier login d'un nouvel utilisateur, NC appelle userExists()
-     *  juste après checkPassword() pour créer l'entrée oc_users / oc_accounts
-     *  (auto-provisionnement). Si exists_ est déjà en cache, userExists() retourne
-     *  true immédiatement et NC croit que l'utilisateur est déjà provisionné → il
-     *  ne crée JAMAIS l'entrée oc_users → home directory non initialisé → impossible
-     *  de créer des fichiers / dossiers.
-     *
-     *  C'est userExists() qui pose "known=1" après confirmation LDAP, ce qui garantit
-     *  que NC a eu le temps d'auto-provisionner l'utilisateur avant.
+     * Équivalent de user_ldap::checkPassword() + markLogin() + cacheUserExists() :
+     *  - known=1 est posé immédiatement (persistant, visible par userExists sur tous
+     *    les processus PHP dès que la transaction est commitée)
+     *  - double cache credentials : distribué (rapide) + app config (persistant)
+     *    → le re-check "Se souvenir de moi" de NC (toutes les 300s) ne touche LDAP
+     *    qu'une fois par heure même si APCu est vide (nouveau processus PHP)
      */
     public function checkPassword(string $loginName, string $password): string|false {
         if (empty($loginName) || empty($password)) {
             return false;
         }
 
-        // Cache des credentials — couvre les re-checks "Se souvenir de moi" (300s NC).
-        // TTL 3600s : LDAP n'est consulté qu'une fois par heure au lieu de chaque re-check.
-        $credKey   = hash('sha256', $loginName . ':' . $password);
-        $cachedUid = $this->authCache->get($credKey);
+        $credHash = hash('sha256', $loginName . ':' . $password);
+        $credKey  = self::CRED_PREFIX . substr($credHash, 0, self::CRED_LEN);
+
+        // 1. Cache distribué (rapide, APCu par processus ou Redis si configuré)
+        $cachedUid = $this->authCache->get($credHash);
         if ($cachedUid !== null) {
             return $cachedUid;
         }
 
+        // 2. App config persistant (DB-backed, survit aux redémarrages de processus PHP)
+        //    Stocke : uid|timestamp_expiry
+        $stored = $this->config->getAppValue(self::APP_PREF, $credKey, '');
+        if ($stored !== '') {
+            [$storedUid, $expiry] = array_pad(explode('|', $stored, 2), 2, '0');
+            if ((int) $expiry > time() && $storedUid !== '') {
+                // Re-remplit le cache distribué pour les requêtes suivantes du même processus
+                $this->authCache->set($credHash, $storedUid, 3600);
+                $this->authCache->set('exists_' . $storedUid, '1', 300);
+                return $storedUid;
+            }
+            // Entrée expirée → on la supprimera après re-auth LDAP réussie
+        }
+
+        // 3. Authentification LDAP
         try {
             $uid = $this->ldapService->authenticate($loginName, $password);
             if ($uid !== null) {
-                $this->authCache->set($credKey, $uid, 3600);
-                // NE PAS poser known=1 ici — voir docblock ci-dessus.
+                $expiry = time() + 3600;
+
+                // Cache distribué (rapide, par processus)
+                $this->authCache->set($credHash, $uid, 3600);
+                $this->authCache->set('exists_' . $uid, '1', 3600);
+
+                // Cache persistant (DB, survit aux redémarrages — équivalent markLogin)
+                $this->config->setAppValue(self::APP_PREF, $credKey, $uid . '|' . $expiry);
+
+                // Enregistrement de l'utilisateur (≡ markLogin + cacheUserExists user_ldap)
+                // known=1 posé ici pour que userExists() ne rappelle jamais LDAP pour
+                // cet utilisateur après cette authentification réussie.
+                $this->config->setUserValue($uid, self::APP_PREF, self::KNOWN_KEY, '1');
+
+                $this->logger->info('[SynoLDAP] Authentification réussie : ' . $loginName . ' → ' . $uid);
                 return $uid;
             }
         } catch (\Throwable $e) {
@@ -134,36 +175,31 @@ class LdapUserBackend extends ABackend implements
     /**
      * Indique si l'utilisateur est reconnu par ce backend.
      *
-     * Ordre (même logique que user_ldap / ldap_user_mapping) :
-     *  1. Cache distribué (burst de requêtes, ~5 min)
-     *  2. oc_preferences "known" — aucun LDAP pour les utilisateurs déjà provisionnés
-     *  3. LDAP — premier login ou utilisateur inconnu de NC
-     *     → après confirmation, pose "known=1" pour les appels suivants
-     *
-     * C'est ici que "known=1" est posé, PAS dans checkPassword(), afin de laisser
-     * NC créer l'entrée oc_users / oc_accounts lors du premier appel (auto-provisionnement).
+     * Ordre (identique à user_ldap via ldap_user_mapping) :
+     *  1. Cache distribué (burst de requêtes, par processus)
+     *  2. oc_preferences[synoldap][known] — aucun LDAP pour les utilisateurs connus
+     *     (posé par checkPassword ≡ cacheUserExists + markLogin de user_ldap)
+     *  3. LDAP — uniquement pour un utilisateur jamais authentifié via ce backend
      */
     public function userExists($uid): bool {
         // 1. Cache distribué
-        $cacheKey = 'exists_' . $uid;
-        $cached   = $this->authCache->get($cacheKey);
+        $cached = $this->authCache->get('exists_' . $uid);
         if ($cached !== null) {
             return $cached === '1';
         }
 
-        // 2. oc_preferences (persistant, pas de LDAP)
+        // 2. oc_preferences (persistant, DB-backed)
         if ($this->config->getUserValue($uid, self::APP_PREF, self::KNOWN_KEY, '0') === '1') {
-            $this->authCache->set($cacheKey, '1', 300);
+            $this->authCache->set('exists_' . $uid, '1', 300);
             return true;
         }
 
-        // 3. LDAP — uniquement au premier login ou si oc_preferences n'est pas encore posé
+        // 3. LDAP (premier login ou utilisateur inconnu)
         try {
             $exists = $this->ldapService->userExists($uid);
             if ($exists) {
-                // Pose "known=1" APRÈS que NC ait pu auto-provisionner l'utilisateur.
                 $this->config->setUserValue($uid, self::APP_PREF, self::KNOWN_KEY, '1');
-                $this->authCache->set($cacheKey, '1', 300);
+                $this->authCache->set('exists_' . $uid, '1', 300);
             }
             return $exists;
         } catch (\Throwable $e) {
@@ -222,7 +258,16 @@ class LdapUserBackend extends ABackend implements
         return true;
     }
 
+    /**
+     * Supprime les données synoldap de l'utilisateur lors d'une suppression NC.
+     * Nettoie known=1 et le cache persistant pour éviter que le backend continue
+     * à reconnaître un utilisateur supprimé.
+     */
     public function deleteUser($uid): bool {
+        $this->config->deleteUserValue($uid, self::APP_PREF, self::KNOWN_KEY);
+        $this->authCache->remove('exists_' . $uid);
+        // Les entrées cr_* de l'app config expirent naturellement (1h) ou lors
+        // de la prochaine tentative de connexion avec ce compte.
         return true;
     }
 
@@ -230,7 +275,7 @@ class LdapUserBackend extends ABackend implements
 
     /**
      * Retourne l'état activé/désactivé depuis la base NC (identique à user_ldap).
-     * Aucun appel LDAP par requête : la révocation AD passe par checkPassword().
+     * Aucun appel LDAP par requête.
      */
     public function isUserEnabled(string $uid, callable $queryDatabaseValue): bool {
         return (bool) $queryDatabaseValue();
