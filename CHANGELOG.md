@@ -7,6 +7,30 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [3.2.1] — 2026-06-04
+
+### Fix — UserLdapBridgeService : écriture directe dans oc_appconfig
+
+La v3.2.0 utilisait `\OCA\User_LDAP\Configuration::saveConfiguration()` pour écrire
+la config user_ldap. Cette classe utilise `\OCP\Server::get()` en interne avec des
+dépendances NC 33 qui ne s'injectent pas correctement depuis un service externe →
+`sync()` retournait false silencieusement.
+
+**Fix** : réécriture complète en `IConfig::setAppValue()` directs — plus simple,
+pas de dépendance aux classes internes de user_ldap, 100% prévisible.
+
+Paramètres écrits dans `oc_appconfig[user_ldap]` (préfixe vide = premier serveur) :
+- Serveur : `ldap_host`, `ldap_port`, `ldap_tls`, `ldap_turn_off_cert_check`
+- Auth : `ldap_agent_name`, `ldap_agent_password` (base64-encoded comme user_ldap)
+- DNs : `ldap_base`, `ldap_base_users`, `ldap_base_groups`
+- Filtres : `ldap_userlist_filter`, `ldap_login_filter`, `ldap_login_filter_username`
+- UID : `ldap_expert_username_attr` (sAMAccountName)
+- Groupes : `ldap_group_filter`, `ldap_group_member_assoc_attribute`, `ldap_group_display_name`
+- UUID : `ldap_uuid_user_attribute` (objectGUID)
+- Activation : `ldap_configuration_active = 1`
+
+---
+
 ## [3.2.0] — 2026-06-04
 
 ### Architecture définitive — user_ldap intégré via bridge automatique

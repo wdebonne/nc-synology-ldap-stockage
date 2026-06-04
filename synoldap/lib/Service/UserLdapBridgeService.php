@@ -7,190 +7,192 @@ use OCP\IConfig;
 use Psr\Log\LoggerInterface;
 
 /**
- * Configure user_ldap automatiquement depuis les paramètres synoldap.
+ * Configure user_ldap depuis les paramètres synoldap en écrivant directement
+ * dans oc_appconfig — sans dépendance aux classes internes de user_ldap.
  *
- * Principe : user_ldap fonctionne parfaitement avec NC 33 (sessions, DAV_AUTHENTICATED,
- * remember me, etc.). Au lieu de réimplémenter tout ça, synoldap écrit ses paramètres
- * LDAP dans l'espace de configuration de user_ldap — user_ldap gère l'authentification,
- * synoldap ajoute les fonctionnalités Synology (groupes, montages SMB, ACL).
+ * user_ldap lit sa config depuis oc_appconfig[user_ldap]. En écrivant les
+ * bons paramètres, user_ldap utilise la connexion Synology AD exactement
+ * comme si l'admin l'avait configurée manuellement.
  *
- * La configuration user_ldap est mise à jour à chaque saveConfig() ET à chaque boot
- * (si la valeur a changé). user_ldap lit sa config depuis oc_appconfig à chaque démarrage
- * → synchronisation automatique.
- *
- * Préfixe utilisé : vide (première configuration user_ldap, la plus simple).
+ * Mot de passe : base64_encode() — format utilisé par user_ldap (Configuration.php:347).
+ * Préfixe     : '' (premier serveur, sans préfixe) → clés sans préfixe (ldap_host, …)
  */
 class UserLdapBridgeService {
-    private const APP_ID     = 'synoldap';
-    private const UL_APP_ID  = 'user_ldap';
-
-    // Préfixe user_ldap : vide = première configuration (le plus courant)
-    private const UL_PREFIX  = '';
+    private const APP_ID    = 'synoldap';
+    private const UL_APP    = 'user_ldap';
+    private const UL_PREFIX = ''; // Premier serveur user_ldap (sans préfixe)
 
     public function __construct(
         private IConfig $config,
         private LoggerInterface $logger,
     ) {}
 
-    /**
-     * Vérifie si user_ldap est disponible (classes présentes dans l'instance NC).
-     */
     public function isUserLdapAvailable(): bool {
-        return class_exists('\OCA\User_LDAP\Configuration');
+        // Vérifie si user_ldap est installé et activé dans NC
+        $apps = $this->config->getSystemValue('apps_paths', []);
+        // Approche plus simple : vérifier si la classe est chargeable
+        return class_exists('\OCA\User_LDAP\Helper') || $this->isUserLdapEnabled();
+    }
+
+    private function isUserLdapEnabled(): bool {
+        $enabled = $this->config->getAppValue('core', 'installedversion', '');
+        // Vérifier via oc_appconfig si user_ldap est listé comme activé
+        $ulVersion = $this->config->getAppValue('user_ldap', 'installed_version', '');
+        return !empty($ulVersion);
     }
 
     /**
-     * Synchronise les paramètres LDAP de synoldap vers user_ldap.
-     * Idempotent : n'écrit en DB que si les valeurs ont changé.
-     * Retourne true si la synchronisation a réussi, false sinon.
+     * Synchronise la config LDAP de synoldap vers user_ldap.
+     * Utilise IConfig::setAppValue() directement → simple, fiable, pas de dépendance interne.
      */
     public function sync(): bool {
-        if (!$this->isUserLdapAvailable()) {
-            $this->logger->debug('[SynoLDAP] user_ldap non disponible — bridge non activé');
-            return false;
-        }
-
         $host = $this->config->getAppValue(self::APP_ID, 'ldap_host', '');
         if (empty($host)) {
-            return false; // Pas encore configuré
+            $this->logger->debug('[SynoLDAP] Bridge: ldap_host non configuré');
+            return false;
         }
 
         try {
-            $this->writeUserLdapConfig();
+            $this->writeConfig();
+            $this->logger->info('[SynoLDAP] user_ldap configuré automatiquement (' . $host . ')');
             return true;
         } catch (\Throwable $e) {
-            $this->logger->warning('[SynoLDAP] Erreur sync user_ldap: ' . $e->getMessage());
+            $this->logger->error('[SynoLDAP] Bridge sync échoué: ' . $e->getMessage());
             return false;
         }
     }
 
     /**
-     * Écrit la configuration user_ldap via sa propre classe Configuration.
-     * user_ldap::Configuration gère le chiffrement du mot de passe (base64),
-     * la sérialisation des tableaux, et l'écriture en DB.
+     * Écrit tous les paramètres LDAP dans oc_appconfig[user_ldap].
      */
-    private function writeUserLdapConfig(): void {
-        $syno = $this->getSynoldapConfig();
+    private function writeConfig(): void {
+        $c = $this->getSynoldapConfig();
+        $p = self::UL_PREFIX;
+        $a = self::UL_APP;
 
-        /** @var \OCA\User_LDAP\Configuration $conf */
-        $conf = new \OCA\User_LDAP\Configuration(self::UL_PREFIX, false);
+        // ── Serveur ───────────────────────────────────────────────────────────
+        $this->set($a, $p . 'ldap_host',                 $c['host']);
+        $this->set($a, $p . 'ldap_port',                 $c['port']);
+        $this->set($a, $p . 'ldap_tls',                  $c['tls']);
+        $this->set($a, $p . 'ldap_turn_off_cert_check',  '1'); // Synology : cert auto-signé fréquent
 
-        // Connexion LDAP
-        $conf->ldapHost            = $syno['host'];
-        $conf->ldapPort            = $syno['port'];
-        $conf->ldapTLS             = $syno['tls'];
-        $conf->turnOffCertCheck    = '1'; // Synology AD : certificat auto-signé fréquent
-        $conf->ldapAgentName       = $syno['bind_dn'];
-        $conf->ldapAgentPassword   = $syno['bind_password'];
+        // ── Compte de service ─────────────────────────────────────────────────
+        $this->set($a, $p . 'ldap_agent_name',           $c['bind_dn']);
+        // Mot de passe : base64_encode comme user_ldap::Configuration::saveConfiguration()
+        if (!empty($c['bind_password'])) {
+            $this->set($a, $p . 'ldap_agent_password',   base64_encode($c['bind_password']));
+        }
 
-        // Base DN
-        $conf->ldapBase            = $syno['user_base_dn'];
-        $conf->ldapBaseUsers       = $syno['user_base_dn'];
-        $conf->ldapBaseGroups      = $syno['group_base_dn'] ?: $syno['user_base_dn'];
+        // ── Base DNs ──────────────────────────────────────────────────────────
+        $groupBase = $c['group_base_dn'] ?: $c['user_base_dn'];
+        $this->set($a, $p . 'ldap_base',                 $c['user_base_dn']);
+        $this->set($a, $p . 'ldap_base_users',           $c['user_base_dn']);
+        $this->set($a, $p . 'ldap_base_groups',          $groupBase);
 
-        // Filtres utilisateurs
-        $conf->ldapUserFilter          = '(objectClass=' . $syno['user_object_class'] . ')';
-        $conf->ldapUserFilterObjectclass = $syno['user_object_class'];
-        $conf->ldapUserFilterMode      = '1';
-        $conf->ldapUserDisplayName     = 'displayName';
+        // ── Filtres utilisateurs ──────────────────────────────────────────────
+        $oc   = $c['user_object_class']; // 'user' pour Synology AD
+        $attr = $c['user_attr'];         // 'sAMAccountName'
+        $this->set($a, $p . 'ldap_userlist_filter',      "(objectClass={$oc})");
+        $this->set($a, $p . 'ldap_userfilter_objectclass', $oc);
+        $this->set($a, $p . 'ldap_user_filter_mode',     '1');
+        $this->set($a, $p . 'ldap_display_name',         'displayName');
+        $this->set($a, $p . 'ldap_email_attr',           'mail');
 
-        // Attribut UID (sAMAccountName pour Synology AD)
-        $conf->ldapExpertUsernameAttr  = $syno['user_attr'];
-        $conf->ldapLoginFilter         = '(&(objectClass=' . $syno['user_object_class'] . ')('
-                                         . $syno['user_attr'] . '=%uid))';
-        $conf->ldapLoginFilterUsername  = '1';
-        $conf->ldapLoginFilterMode      = '0';
+        // ── Filtre de connexion (login) ───────────────────────────────────────
+        $this->set($a, $p . 'ldap_login_filter',         "(&(objectClass={$oc})({$attr}=%uid))");
+        $this->set($a, $p . 'ldap_login_filter_mode',    '0');
+        $this->set($a, $p . 'ldap_login_filter_username','1');
+        $this->set($a, $p . 'ldap_login_filter_email',   '0');
 
-        // Filtres groupes
-        $conf->ldapGroupFilter          = '(objectClass=group)';
-        $conf->ldapGroupFilterObjectclass = 'group';
-        $conf->ldapGroupFilterMode      = '0';
-        $conf->ldapGroupMemberAssocAttr = 'member';
-        $conf->ldapGroupDisplayName     = 'cn';
+        // ── Attribut UID (sAMAccountName pour Synology AD) ───────────────────
+        $this->set($a, $p . 'ldap_expert_username_attr', $attr);
 
-        // UUID (objectGUID pour Active Directory)
-        $conf->ldapUuidUserAttribute    = 'objectGUID';
-        $conf->ldapUuidGroupAttribute   = 'objectGUID';
+        // ── Groupes ───────────────────────────────────────────────────────────
+        $this->set($a, $p . 'ldap_group_filter',         '(objectClass=group)');
+        $this->set($a, $p . 'ldap_group_filter_mode',    '0');
+        $this->set($a, $p . 'ldap_group_filter_objectclass', 'group');
+        $this->set($a, $p . 'ldap_group_display_name',   'cn');
+        $this->set($a, $p . 'ldap_group_member_assoc_attribute', 'member');
 
-        // Performances
-        $conf->ldapCacheTTL             = '600';
-        $conf->ldapPagingSize           = '500';
-        $conf->ldapNestedGroups         = '0';
-        $conf->useMemberOfToDetectMembership = '1';
+        // ── UUID (objectGUID pour Active Directory) ───────────────────────────
+        $this->set($a, $p . 'ldap_uuid_user_attribute',  'objectGUID');
+        $this->set($a, $p . 'ldap_uuid_group_attribute', 'objectGUID');
 
-        // Activer cette configuration
-        $conf->ldapConfigurationActive  = '1';
+        // ── Performances ──────────────────────────────────────────────────────
+        $this->set($a, $p . 'ldap_cache_ttl',            '600');
+        $this->set($a, $p . 'ldap_paging_size',          '500');
+        $this->set($a, $p . 'ldap_nested_groups',        '0');
+        $this->set($a, $p . 'ldap_use_member_of_to_detect_membership', '1');
 
-        $conf->saveConfiguration();
+        // ── Activer cette configuration ───────────────────────────────────────
+        $this->set($a, $p . 'ldap_configuration_active', '1');
 
-        // Enregistrer le préfixe dans la liste user_ldap (pour NC 33)
-        $this->registerPrefix();
-
-        $this->logger->info('[SynoLDAP] user_ldap configuré automatiquement depuis synoldap ('
-                            . $syno['host'] . ':' . $syno['port'] . ')');
+        // ── Enregistrer le préfixe pour que user_ldap le détecte ─────────────
+        // En NC 33, user_ldap cherche d'abord 'configuration_prefixes'.
+        // S'il ne trouve pas, il utilise le fallback (scan des clés _ldap_configuration_active).
+        // On écrit les deux pour maximiser la compatibilité.
+        $this->registerPrefixLegacy();
     }
 
     /**
-     * Enregistre notre préfixe dans la liste de préfixes connue de user_ldap.
-     * En NC 33, user_ldap lit cette liste depuis oc_appconfig[user_ldap][configuration_prefixes].
+     * Méthode legacy : écrit le préfixe dans configuration_prefixes (format JSON string).
+     * user_ldap NC 33 lit ce champ via IAppConfig::getValueArray().
+     * En cas de mismatch de type, il utilise le fallback (scan des clés actives) → OK.
      */
-    private function registerPrefix(): void {
-        $currentJson = $this->config->getAppValue(self::UL_APP_ID, 'configuration_prefixes', 'UNFILLED');
-
-        if ($currentJson === 'UNFILLED') {
-            // Première configuration : utiliser le préfixe vide
-            $this->config->setAppValue(self::UL_APP_ID, 'configuration_prefixes', '[""]');
+    private function registerPrefixLegacy(): void {
+        $current = $this->config->getAppValue(self::UL_APP, 'configuration_prefixes', '');
+        if ($current === '' || $current === 'UNFILLED') {
+            // Première config : préfixe vide
+            $this->config->setAppValue(self::UL_APP, 'configuration_prefixes', json_encode(['']));
         } else {
-            // Ajouter notre préfixe si pas déjà présent
-            $prefixes = json_decode($currentJson, true);
+            $prefixes = @json_decode($current, true);
             if (is_array($prefixes) && !in_array(self::UL_PREFIX, $prefixes, true)) {
                 $prefixes[] = self::UL_PREFIX;
-                $this->config->setAppValue(self::UL_APP_ID, 'configuration_prefixes', json_encode($prefixes));
+                $this->config->setAppValue(self::UL_APP, 'configuration_prefixes', json_encode($prefixes));
             }
         }
     }
 
-    /**
-     * Lit et retourne la configuration LDAP de synoldap.
-     */
+    private function set(string $app, string $key, string $value): void {
+        $this->config->setAppValue($app, $key, $value);
+    }
+
     private function getSynoldapConfig(): array {
         return [
-            'host'             => $this->config->getAppValue(self::APP_ID, 'ldap_host', ''),
-            'port'             => $this->config->getAppValue(self::APP_ID, 'ldap_port', '389'),
-            'tls'              => $this->config->getAppValue(self::APP_ID, 'ldap_tls', '0'),
-            'bind_dn'          => $this->config->getAppValue(self::APP_ID, 'ldap_bind_dn', ''),
-            'bind_password'    => $this->config->getAppValue(self::APP_ID, 'ldap_bind_password', ''),
-            'user_base_dn'     => $this->config->getAppValue(self::APP_ID, 'ldap_user_base_dn', ''),
-            'group_base_dn'    => $this->config->getAppValue(self::APP_ID, 'ldap_group_base_dn', ''),
-            'user_attr'        => $this->config->getAppValue(self::APP_ID, 'ldap_user_attr', 'sAMAccountName'),
-            'user_object_class'=> $this->config->getAppValue(self::APP_ID, 'ldap_user_object_class', 'user'),
+            'host'              => $this->config->getAppValue(self::APP_ID, 'ldap_host', ''),
+            'port'              => $this->config->getAppValue(self::APP_ID, 'ldap_port', '389'),
+            'tls'               => $this->config->getAppValue(self::APP_ID, 'ldap_tls', '0'),
+            'bind_dn'           => $this->config->getAppValue(self::APP_ID, 'ldap_bind_dn', ''),
+            'bind_password'     => $this->config->getAppValue(self::APP_ID, 'ldap_bind_password', ''),
+            'user_base_dn'      => $this->config->getAppValue(self::APP_ID, 'ldap_user_base_dn', ''),
+            'group_base_dn'     => $this->config->getAppValue(self::APP_ID, 'ldap_group_base_dn', ''),
+            'user_attr'         => $this->config->getAppValue(self::APP_ID, 'ldap_user_attr', 'sAMAccountName'),
+            'user_object_class' => $this->config->getAppValue(self::APP_ID, 'ldap_user_object_class', 'user'),
         ];
     }
 
-    /**
-     * Retourne des informations sur la configuration user_ldap courante.
-     */
     public function getStatus(): array {
-        if (!$this->isUserLdapAvailable()) {
-            return ['available' => false, 'message' => 'App user_ldap non disponible'];
+        $ulEnabled = $this->isUserLdapEnabled();
+        if (!$ulEnabled) {
+            return ['available' => false, 'message' => "App user_ldap non installée ou désactivée.\nActivez-la via Administration → Applications."];
         }
 
-        $host = $this->config->getAppValue(self::APP_ID, 'ldap_host', '');
-        if (empty($host)) {
-            return ['available' => true, 'configured' => false, 'message' => 'LDAP non configuré dans synoldap'];
-        }
+        $host   = $this->config->getAppValue(self::APP_ID, 'ldap_host', '');
+        $ulHost = $this->config->getAppValue(self::UL_APP, self::UL_PREFIX . 'ldap_host', '');
+        $active = $this->config->getAppValue(self::UL_APP, self::UL_PREFIX . 'ldap_configuration_active', '0');
 
-        $ulHost = $this->config->getAppValue(self::UL_APP_ID, self::UL_PREFIX . 'ldap_host', '');
-        $active = $this->config->getAppValue(self::UL_APP_ID, self::UL_PREFIX . 'ldap_configuration_active', '0');
+        $synced = ($ulHost === $host && $active === '1' && !empty($host));
 
         return [
             'available'  => true,
-            'configured' => ($ulHost === $host && $active === '1'),
+            'configured' => $synced,
             'ul_host'    => $ulHost,
             'ul_active'  => $active === '1',
-            'message'    => $active === '1' && $ulHost === $host
-                ? "user_ldap configuré sur {$ulHost}"
-                : "user_ldap non synchronisé (host: {$ulHost}, actif: {$active})",
+            'message'    => $synced
+                ? "✓ user_ldap configuré sur {$ulHost}"
+                : ($ulHost !== $host
+                    ? "⚠️ user_ldap pointe sur '{$ulHost}' au lieu de '{$host}' — cliquez Sauvegarder"
+                    : "⚠️ user_ldap non actif — cliquez Sauvegarder"),
         ];
     }
 }
