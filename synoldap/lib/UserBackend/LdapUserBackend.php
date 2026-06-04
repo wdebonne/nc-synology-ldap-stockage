@@ -4,9 +4,11 @@ declare(strict_types=1);
 namespace OCA\SynoLDAP\UserBackend;
 
 use OCA\SynoLDAP\Service\LdapService;
+use OC\User\Backend;
 use OCP\ICache;
 use OCP\ICacheFactory;
 use OCP\IConfig;
+use OCP\IDBConnection;
 use OCP\User\Backend\ABackend;
 use OCP\User\Backend\ICheckPasswordBackend;
 use OCP\User\Backend\ICountUsersBackend;
@@ -17,15 +19,17 @@ use OCP\UserInterface;
 use Psr\Log\LoggerInterface;
 
 /**
- * Backend d'authentification Nextcloud basé sur l'Active Directory Synology.
+ * Backend utilisateur SynoLDAP — basé sur les patterns éprouvés de user_ldap.
  *
- * Compatible NC 33 + PostgreSQL (NC AIO) :
- * - oc_users n'a PAS de colonne backend en PostgreSQL → pas d'ensureUserRow().
- *   NC 33 détermine le backend en itérant tous les backends via userExists().
- * - known=1 est posé dans checkPassword() (login ET re-check token "Se souvenir de moi")
- *   ET dans UserLoggedInListener (PostLoginEvent) comme sécurité.
- * - Aucune écriture DB dans la transaction d'auth NC 33 : setUserValue() est safe
- *   (oc_preferences n'est pas dans les tables "dirty" trackées par NC 33).
+ * Différence fondamentale avec les versions précédentes :
+ * userExists() consulte d'abord la table `oc_synoldap_users` (mapping persistant),
+ * exactement comme user_ldap consulte `oc_ldap_user_mapping`.
+ * → Aucun appel LDAP pour valider la session des utilisateurs connus.
+ * → Aucune dépendance au cache Redis/APCu.
+ * → Aucun problème de dirty table reads NC 33.
+ *
+ * implementsActions() utilise le bitmask manuel (comme user_ldap::User_LDAP),
+ * pas les interfaces OCP — compatible NC 25 à 33.
  */
 class LdapUserBackend extends ABackend implements
     UserInterface,
@@ -35,18 +39,31 @@ class LdapUserBackend extends ABackend implements
     ICountUsersBackend,
     IProvideEnabledStateBackend
 {
-    private const KNOWN_KEY = 'known';
-    private const APP_PREF  = 'synoldap';
-
-    private ICache $authCache;
+    private ICache $cache;
 
     public function __construct(
         private LdapService $ldapService,
         private LoggerInterface $logger,
         ICacheFactory $cacheFactory,
         private IConfig $config,
+        private IDBConnection $db,
     ) {
-        $this->authCache = $cacheFactory->createDistributed('synoldap_auth_');
+        $this->cache = $cacheFactory->createDistributed('synoldap_');
+    }
+
+    // ─── Capacités déclarées (comme user_ldap::implementsActions) ────────────
+
+    /**
+     * Déclare les capacités avec le bitmask manuel de user_ldap.
+     * ABackend::implementsActions() via interfaces ne suffit pas en NC 33 :
+     * user_ldap surcharge cette méthode avec un bitmask explicite incluant
+     * Backend::GET_HOME — sans ça, NC peut ne pas créer le home storage.
+     */
+    public function implementsActions($actions): bool {
+        return (bool)(
+            (Backend::CHECK_PASSWORD | Backend::GET_HOME | Backend::GET_DISPLAYNAME | Backend::COUNT_USERS)
+            & $actions
+        );
     }
 
     public function getBackendName(): string {
@@ -55,62 +72,53 @@ class LdapUserBackend extends ABackend implements
 
     // ─── Home directory ───────────────────────────────────────────────────────
 
+    /**
+     * Retourne le chemin home — déclaré via implementsActions(GET_HOME).
+     * user_ldap retourne false si pas de règle home → NC utilise le chemin par défaut.
+     * On fait pareil : retourne directement {datadirectory}/{uid}.
+     */
     public function getHome(string $uid): string|false {
-        $dataDir = rtrim((string) $this->config->getSystemValue('datadirectory', ''), '/');
-        if ($dataDir === '') {
-            return false;
-        }
-        if ($this->authCache->get('exists_' . $uid) === '1') {
-            return $dataDir . '/' . $uid;
-        }
-        if ($this->config->getUserValue($uid, self::APP_PREF, self::KNOWN_KEY, '0') === '1') {
-            return $dataDir . '/' . $uid;
-        }
         if (!$this->userExists($uid)) {
             return false;
         }
-        return $dataDir . '/' . $uid;
+        $dataDir = rtrim((string) $this->config->getSystemValue('datadirectory', ''), '/');
+        return $dataDir !== '' ? $dataDir . '/' . $uid : false;
     }
 
     // ─── Authentification ─────────────────────────────────────────────────────
 
     /**
-     * Vérifie les identifiants contre l'AD Synology.
+     * Équivalent de user_ldap::checkPassword() + User::markLogin() :
+     *  1. Résout le DN depuis le sAMAccountName (compte de service)
+     *  2. Bind LDAP avec les credentials utilisateur
+     *  3. Écrit dans oc_synoldap_users (équivalent markLogin + cacheUserExists)
      *
-     * known=1 est posé ICI (pas seulement dans le listener) pour deux raisons :
-     * 1. Le listener PostLoginEvent ne s'exécute qu'au login réel, pas lors du
-     *    re-check "Se souvenir de moi" (toutes les 300s NC appelle checkPassword).
-     * 2. Quand le cache Redis expire (>3600s), NC appelle checkPassword → LDAP →
-     *    on repose known=1 + on refait le cache. Sans ça, userExists() appellerait
-     *    LDAP pour chaque validation de session → si LDAP lent → 401.
-     *
-     * oc_preferences (setUserValue) est safe dans NC 33 : pas dans les tables "dirty"
-     * trackées par NC 33 (oc_jobs, oc_appconfig, oc_oauth2_*, oc_filecache*).
+     * La table oc_synoldap_users n'est PAS dans les dirty tables trackées par NC 33
+     * → Aucun problème de transaction.
      */
     public function checkPassword(string $loginName, string $password): string|false {
         if (empty($loginName) || empty($password)) {
             return false;
         }
 
-        // Cache Redis (partagé entre workers NC AIO via Redis)
-        $credHash  = hash('sha256', $loginName . ':' . $password);
-        $cachedUid = $this->authCache->get($credHash);
+        // Cache distribué (performance — évite LDAP sur re-check "Se souvenir de moi")
+        $credKey  = 'cred_' . hash('sha256', $loginName . ':' . $password);
+        $cachedUid = $this->cache->get($credKey);
         if ($cachedUid !== null) {
-            // known=1 assuré même sur cache hit (Redis peut avoir été peuplé
-            // avant que le listener PostLoginEvent n'ait pu le poser)
-            $this->config->setUserValue($cachedUid, self::APP_PREF, self::KNOWN_KEY, '1');
             return $cachedUid;
         }
 
-        // Authentification LDAP
         try {
             $uid = $this->ldapService->authenticate($loginName, $password);
             if ($uid !== null) {
-                // Cache Redis (TTL 3600s pour couvrir les re-checks NC de 300s)
-                $this->authCache->set($credHash, $uid, 3600);
-                $this->authCache->set('exists_' . $uid, '1', 3600);
-                // Persistant : survit à Redis, permet à userExists() d'éviter LDAP
-                $this->config->setUserValue($uid, self::APP_PREF, self::KNOWN_KEY, '1');
+                // ── markLogin équivalent : écrire dans notre table de mapping ──
+                // Comme user_ldap écrit dans ldap_user_mapping, on écrit dans
+                // synoldap_users. Cette table est le fondement de userExists() :
+                // une fois l'utilisateur ici, aucun appel LDAP n'est nécessaire.
+                $dn = $this->ldapService->getUserDn($uid);
+                $this->upsertMapping($uid, $dn ?? '');
+
+                $this->cache->set($credKey, $uid, 3600);
                 $this->logger->info('[SynoLDAP] Auth réussie : ' . $loginName . ' → ' . $uid);
                 return $uid;
             }
@@ -124,29 +132,35 @@ class LdapUserBackend extends ABackend implements
     // ─── Existence / énumération ──────────────────────────────────────────────
 
     /**
-     * Indique si l'utilisateur est reconnu par ce backend.
+     * Vérifie l'existence — même ordre que user_ldap::userExists() :
+     *  1. Cache distribué (rapide, même processus)
+     *  2. Table oc_synoldap_users (persistant, DB — jamais de LDAP pour les utilisateurs connus)
+     *  3. LDAP (uniquement au premier login, avant que la table ne soit peuplée)
      *
-     * En NC 33 PostgreSQL (sans colonne oc_users.backend), NC itère tous les backends
-     * pour chaque get(uid). Cet ordre garantit un retour rapide pour les utilisateurs
-     * connus sans appel LDAP :
-     *  1. Cache Redis (ms)
-     *  2. oc_preferences known=1 (DB locale, ~ms)
-     *  3. LDAP (premier login uniquement)
+     * C'est ce mécanisme qui rend user_ldap stable : après le premier login,
+     * userExists() ne touche plus jamais LDAP pour cet utilisateur.
      */
     public function userExists($uid): bool {
-        $cached = $this->authCache->get('exists_' . $uid);
+        // 1. Cache distribué
+        $cacheKey = 'exists_' . $uid;
+        $cached   = $this->cache->get($cacheKey);
         if ($cached !== null) {
             return $cached === '1';
         }
-        if ($this->config->getUserValue($uid, self::APP_PREF, self::KNOWN_KEY, '0') === '1') {
-            $this->authCache->set('exists_' . $uid, '1', 300);
+
+        // 2. Table de mapping (équivalent ldap_user_mapping de user_ldap)
+        if ($this->existsInMapping($uid)) {
+            $this->cache->set($cacheKey, '1', 300);
             return true;
         }
+
+        // 3. LDAP (premier login uniquement)
         try {
             $exists = $this->ldapService->userExists($uid);
             if ($exists) {
-                $this->config->setUserValue($uid, self::APP_PREF, self::KNOWN_KEY, '1');
-                $this->authCache->set('exists_' . $uid, '1', 300);
+                $dn = $this->ldapService->getUserDn($uid);
+                $this->upsertMapping($uid, $dn ?? '');
+                $this->cache->set($cacheKey, '1', 300);
             }
             return $exists;
         } catch (\Throwable $e) {
@@ -199,8 +213,8 @@ class LdapUserBackend extends ABackend implements
     }
 
     public function deleteUser($uid): bool {
-        $this->config->deleteUserValue($uid, self::APP_PREF, self::KNOWN_KEY);
-        $this->authCache->remove('exists_' . $uid);
+        $this->removeFromMapping($uid);
+        $this->cache->remove('exists_' . $uid);
         return true;
     }
 
@@ -217,5 +231,67 @@ class LdapUserBackend extends ABackend implements
 
     public function getDisabledUserList(?int $limit = null, int $offset = 0, string $search = ''): array {
         return [];
+    }
+
+    // ─── Table de mapping (équivalent ldap_user_mapping) ─────────────────────
+
+    /**
+     * Vérifie la présence dans oc_synoldap_users.
+     * Lecture simple et rapide — pas de LDAP, pas de cache externe.
+     */
+    private function existsInMapping(string $uid): bool {
+        try {
+            $qb     = $this->db->getQueryBuilder();
+            $result = $qb->select('uid')
+                ->from('synoldap_users')
+                ->where($qb->expr()->eq('uid', $qb->createNamedParameter($uid)))
+                ->setMaxResults(1)
+                ->executeQuery();
+            $row = $result->fetch();
+            $result->closeCursor();
+            return $row !== false;
+        } catch (\Throwable $e) {
+            // Table pas encore créée (avant occ upgrade) — fallback LDAP
+            $this->logger->debug('[SynoLDAP] existsInMapping: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Insère ou met à jour l'entrée dans oc_synoldap_users.
+     * Équivalent de user_ldap::cacheUserExists() + User::markLogin().
+     */
+    private function upsertMapping(string $uid, string $dn): void {
+        try {
+            $now = time();
+            if ($this->existsInMapping($uid)) {
+                $qb = $this->db->getQueryBuilder();
+                $qb->update('synoldap_users')
+                    ->set('dn',          $qb->createNamedParameter($dn))
+                    ->set('verified_at', $qb->createNamedParameter($now))
+                    ->where($qb->expr()->eq('uid', $qb->createNamedParameter($uid)))
+                    ->executeStatement();
+            } else {
+                $qb = $this->db->getQueryBuilder();
+                $qb->insert('synoldap_users')
+                    ->setValue('uid',         $qb->createNamedParameter($uid))
+                    ->setValue('dn',          $qb->createNamedParameter($dn))
+                    ->setValue('verified_at', $qb->createNamedParameter($now))
+                    ->executeStatement();
+                $this->logger->info('[SynoLDAP] Utilisateur ajouté au mapping: ' . $uid);
+            }
+        } catch (\Throwable $e) {
+            $this->logger->warning('[SynoLDAP] upsertMapping(' . $uid . '): ' . $e->getMessage());
+        }
+    }
+
+    private function removeFromMapping(string $uid): void {
+        try {
+            $qb = $this->db->getQueryBuilder();
+            $qb->delete('synoldap_users')
+                ->where($qb->expr()->eq('uid', $qb->createNamedParameter($uid)))
+                ->executeStatement();
+        } catch (\Throwable) {
+        }
     }
 }

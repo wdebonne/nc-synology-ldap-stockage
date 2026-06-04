@@ -3,11 +3,11 @@
       xsi:noNamespaceSchemaLocation="https://apps.nextcloud.com/schema/apps/info.xsd">
     <id>synoldap</id>
     <name>Synology LDAP Manager</name>
-    <summary>Synology AD group sync and SMB storage by ACL — companion app for user_ldap</summary>
+    <summary>Synology AD authentication, group sync and SMB storage — based on user_ldap patterns</summary>
     <description><![CDATA[
-Companion app for user_ldap: adds Synology-specific features on top of user_ldap's proven authentication.
+Full integration of Synology Active Directory into Nextcloud — no external dependency required.
 
-**Requires user_ldap** configured to point at your Synology Active Directory.
+Uses the same architecture as user_ldap (persistent user mapping table) for stable NC 33 compatibility.
 
 **Features v3.0:**
 - Automatic AD group → Nextcloud group sync on each login (via user_ldap)
@@ -17,7 +17,7 @@ Companion app for user_ldap: adds Synology-specific features on top of user_ldap
 - Identical Windows / Nextcloud folder structure via Mount Prefix field (/NAS/Accounting, etc.)
 - Visual admin interface with real-time ACL preview and SMB configuration
     ]]></description>
-    <version>3.0.0</version>
+    <version>3.1.0</version>
     <licence>agpl</licence>
     <author homepage="https://github.com/wdebonne">wdebonne</author>
     <namespace>SynoLDAP</namespace>

@@ -7,6 +7,59 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [3.1.0] — 2026-06-04
+
+### Refactoring architecture — Table de mapping persistante (pattern user_ldap)
+
+#### Pourquoi user_ldap est stable avec NC 33
+
+La vraie raison pour laquelle user_ldap n'a jamais les problèmes que nous avons eus :
+**`ldap_user_mapping`** — une table DB dédiée. Quand `userExists(uid)` est appelé, user_ldap
+consulte d'abord cette table. Si l'utilisateur est trouvé → `true` immédiatement, aucun
+appel LDAP, aucun cache à expirer, aucune dépendance à Redis/APCu.
+
+Nos versions 2.x utilisaient `oc_preferences[synoldap][known]` comme substitut, mais
+cette table fait partie des tables trackées par NC 33 pour les dirty reads → problèmes de
+transaction → incohérence de session → `DAV_AUTHENTICATED` corrompu → 401.
+
+#### Ce qui change en 3.1.0
+
+**Migration `Version3001Date20260603`** : crée la table `oc_synoldap_users` (uid, dn, verified_at).
+Équivalent direct de `oc_ldap_user_mapping` de user_ldap. **Non trackée par NC 33** pour
+les dirty reads.
+
+**`LdapUserBackend`** — réécriture complète sur les patterns user_ldap :
+- `implementsActions()` : bitmask manuel `CHECK_PASSWORD | GET_HOME | GET_DISPLAYNAME | COUNT_USERS`
+  (comme `User_LDAP::implementsActions()`) — plus fiable que les interfaces OCP en NC 33
+- `checkPassword()` : après auth LDAP réussie, appelle `upsertMapping(uid, dn)` — équivalent
+  de `cacheUserExists()` + `User::markLogin()` de user_ldap
+- `userExists()` : 1. cache distribué → 2. `oc_synoldap_users` (DB, permanent) → 3. LDAP
+  (premier login uniquement). Après le premier login, **JAMAIS d'appel LDAP** pour cet utilisateur
+- `getHome()` : déclaré via `implementsActions(GET_HOME)` — NC initialise correctement le home storage
+
+**`LdapService::getUserDn()`** : nouvelle méthode pour stocker le DN LDAP dans le mapping.
+
+**`UserLoggedInListener`** : redevient `getBackendClassName() === 'SynoLDAP'` (notre backend
+est de nouveau enregistré), suppression de toute manipulation de session.
+
+**`Application::boot()`** : `userManager->registerBackend($backend)` de retour.
+
+#### Procédure de déploiement
+
+```bash
+# 1. Déployer les fichiers
+sudo docker exec -u www-data nextcloud-aio-nextcloud php /var/www/html/occ upgrade
+# → Crée la table oc_synoldap_users via la migration
+
+# 2. Redémarrer pour vider l'OPcache
+sudo docker restart nextcloud-aio-nextcloud
+
+# 3. Se reconnecter — le premier login peuple oc_synoldap_users
+#    Les logins suivants utilisent la table → aucun LDAP → aucun problème de session
+```
+
+---
+
 ## [3.0.0] — 2026-06-03
 
 ### Refactoring majeur — synoldap devient un companion app pour user_ldap

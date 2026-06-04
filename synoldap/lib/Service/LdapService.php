@@ -186,6 +186,19 @@ class LdapService {
     }
 
     /**
+     * Retourne le DN LDAP de l'utilisateur (pour le stocker dans le mapping).
+     * Équivalent de user_ldap::username2dn().
+     */
+    public function getUserDn(string $uid): ?string {
+        try {
+            $info = $this->getUserInfo($uid);
+            return $info['dn'] ?? null;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
      * Vérifie si un utilisateur existe dans l'AD.
      * Les exceptions (LDAP indisponible, timeout…) se propagent à l'appelant
      * afin qu'il puisse distinguer une erreur réseau d'une absence réelle dans l'AD.
