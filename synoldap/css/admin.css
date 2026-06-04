@@ -1,5 +1,15 @@
 /* ─── SynoLDAP Admin Panel ──────────────────────────────────────────────── */
 
+/* Purge des groupes dupliqués */
+.synoldap-dup-table tr.dup-keep td { background: #edfaed; color: #2e7d32; }
+.synoldap-dup-table tr.dup-delete td { background: #fdecea; color: #b71c1c; }
+.synoldap-dup-table tr.dup-separator td {
+    background: var(--color-background-dark, #f5f5f5);
+    font-weight: 600;
+    border-top: 2px solid var(--color-border, #ddd);
+    padding: 6px 12px;
+}
+
 #synoldap-admin {
     max-width: 960px;
     margin: 0 auto;

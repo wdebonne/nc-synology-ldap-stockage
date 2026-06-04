@@ -580,6 +580,90 @@
         }
     }
 
+    // ─── Duplicate groups ────────────────────────────────────────────────────
+
+    async function checkDuplicateGroups() {
+        const btn = document.getElementById('btn-check-duplicates');
+        btn.disabled = true;
+        btn.textContent = '⏳ Analyse…';
+
+        try {
+            const res = await apiFetch('/admin/duplicate-groups');
+            const card = document.getElementById('duplicates-card');
+            const content = document.getElementById('duplicates-content');
+
+            if (!res.success) {
+                showStatus('Erreur : ' + res.message, 'error');
+                return;
+            }
+
+            showLog(res.message, res.to_delete > 0 ? 'warning' : 'success');
+
+            if (res.to_delete === 0) {
+                showStatus('✓ Aucun groupe dupliqué détecté.', 'success');
+                card.style.display = 'none';
+                return;
+            }
+
+            // Afficher le tableau des doublons
+            const rows = res.duplicates.map(d => {
+                const groupRows = d.groups.map((g, i) => `
+                    <tr class="${i === 0 ? 'dup-keep' : 'dup-delete'}">
+                        <td>${i === 0 ? '✓ Garder' : '✗ Supprimer'}</td>
+                        <td><strong>${esc(g.displayName)}</strong></td>
+                        <td><code>${esc(g.gid)}</code></td>
+                        <td>${g.members} membre(s)</td>
+                    </tr>`).join('');
+                return `<tr class="dup-separator"><td colspan="4"><strong>${esc(d.displayName)}</strong></td></tr>${groupRows}`;
+            }).join('');
+
+            content.innerHTML = `
+                <table class="synoldap-table synoldap-dup-table">
+                    <thead><tr><th>Action</th><th>Nom du groupe</th><th>GID</th><th>Membres</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+                <p class="synoldap-desc" style="margin-top:8px">
+                    <strong>${res.to_delete}</strong> groupe(s) seront supprimés. Leurs membres seront fusionnés dans le groupe conservé.
+                </p>`;
+
+            card.style.display = '';
+            card.scrollIntoView({ behavior: 'smooth' });
+        } catch (e) {
+            showStatus('Erreur : ' + e.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '🔎 Détecter les groupes dupliqués';
+        }
+    }
+
+    async function purgeDuplicateGroups() {
+        const btn = document.getElementById('btn-purge-duplicates');
+        const result = document.getElementById('purge-result');
+        btn.disabled = true;
+        btn.textContent = '⏳ Purge en cours…';
+        result.textContent = '';
+
+        try {
+            const res = await apiFetch('/admin/purge-duplicate-groups', 'POST', {});
+            result.className = 'synoldap-inline-result ' + (res.success ? 'synoldap-ok' : 'synoldap-err');
+            result.textContent = (res.success ? '✓ ' : '⚠️ ') + res.message;
+            showLog('Purge groupes : ' + res.message, res.success ? 'success' : 'warning');
+            if (res.errors && res.errors.length > 0) {
+                res.errors.forEach(e => showLog('  ✗ ' + e, 'error'));
+            }
+            if (res.success && res.deleted > 0) {
+                // Re-analyser pour vérifier qu'il n'y a plus de doublons
+                setTimeout(checkDuplicateGroups, 1500);
+            }
+        } catch (e) {
+            result.className = 'synoldap-inline-result synoldap-err';
+            result.textContent = '✗ ' + e.message;
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '🗑️ Purger les doublons (fusionner + supprimer)';
+        }
+    }
+
     // ─── Init ─────────────────────────────────────────────────────────────────
 
     document.addEventListener('DOMContentLoaded', () => {
@@ -599,6 +683,9 @@
         document.getElementById('btn-add-mapping').addEventListener('click', () => {
             addMappingRow({}, Date.now());
         });
+
+        document.getElementById('btn-check-duplicates').addEventListener('click', checkDuplicateGroups);
+        document.getElementById('btn-purge-duplicates').addEventListener('click', purgeDuplicateGroups);
 
         document.getElementById('btn-clear-log').addEventListener('click', () => {
             document.getElementById('synoldap-log-content').innerHTML = '';

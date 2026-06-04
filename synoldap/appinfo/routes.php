@@ -12,8 +12,10 @@ return [
         // API DSM Synology
         ['name' => 'admin#testDsmApi',      'url' => '/admin/test-dsm-api',     'verb' => 'POST'],
         ['name' => 'admin#testSmb',          'url' => '/admin/test-smb',         'verb' => 'POST'],
-        ['name' => 'admin#getUserLdapStatus','url' => '/admin/user-ldap-status', 'verb' => 'GET'],
-        ['name' => 'admin#syncUserLdap',     'url' => '/admin/sync-user-ldap',   'verb' => 'POST'],
+        ['name' => 'admin#getUserLdapStatus',   'url' => '/admin/user-ldap-status',       'verb' => 'GET'],
+        ['name' => 'admin#syncUserLdap',        'url' => '/admin/sync-user-ldap',         'verb' => 'POST'],
+        ['name' => 'admin#getDuplicateGroups',  'url' => '/admin/duplicate-groups',       'verb' => 'GET'],
+        ['name' => 'admin#purgeDuplicateGroups','url' => '/admin/purge-duplicate-groups', 'verb' => 'POST'],
         ['name' => 'admin#discoverAcl',     'url' => '/admin/discover-acl',     'verb' => 'GET'],
         ['name' => 'admin#clearAclCache',   'url' => '/admin/clear-acl-cache',  'verb' => 'POST'],
     ],

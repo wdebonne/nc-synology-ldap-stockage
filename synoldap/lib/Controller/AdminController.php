@@ -13,6 +13,7 @@ use OCP\AppFramework\Http\Attribute\AdminRequired;
 use OCP\AppFramework\Http\Attribute\NoCSRFRequired;
 use OCP\AppFramework\Http\JSONResponse;
 use OCP\IConfig;
+use OCP\IGroupManager;
 use OCP\IRequest;
 
 class AdminController extends Controller {
@@ -49,6 +50,7 @@ class AdminController extends Controller {
         private StorageConfigService $storageConfigService,
         private SynologyApiService $synoApiService,
         private UserLdapBridgeService $userLdapBridge,
+        private IGroupManager $groupManager,
     ) {
         parent::__construct(self::APP_ID, $request);
     }
@@ -311,6 +313,123 @@ class AdminController extends Controller {
             'success' => $result['success'],
             'groups'  => $result['groups'] ?? [],
         ]);
+    }
+
+    // ─── Purge des groupes dupliqués ──────────────────────────────────────────
+
+    /**
+     * Analyse les groupes NC et retourne la liste des doublons détectés.
+     * Un doublon = plusieurs groupes avec exactement le même displayName.
+     *
+     * @AdminRequired
+     * @NoCSRFRequired
+     */
+    #[AdminRequired]
+    #[NoCSRFRequired]
+    public function getDuplicateGroups(): JSONResponse {
+        $duplicates = $this->findDuplicateGroups();
+        $total = array_sum(array_map(fn($d) => count($d['groups']) - 1, $duplicates));
+        return new JSONResponse([
+            'success'    => true,
+            'duplicates' => $duplicates,
+            'to_delete'  => $total,
+            'message'    => $total > 0
+                ? "{$total} groupe(s) dupliqué(s) détecté(s)."
+                : "Aucun doublon détecté.",
+        ]);
+    }
+
+    /**
+     * Supprime les groupes dupliqués en conservant celui qui a le plus de membres.
+     * Les membres de chaque doublon sont fusionnés dans le groupe conservé.
+     *
+     * @AdminRequired
+     */
+    #[AdminRequired]
+    public function purgeDuplicateGroups(): JSONResponse {
+        $duplicates = $this->findDuplicateGroups();
+        $deleted  = 0;
+        $merged   = 0;
+        $errors   = [];
+
+        foreach ($duplicates as $entry) {
+            $groups  = $entry['groups']; // [['gid' => ..., 'displayName' => ..., 'members' => ...], ...]
+            if (count($groups) < 2) continue;
+
+            // Conserver le groupe avec le plus de membres (ou le premier par ordre alpha)
+            usort($groups, fn($a, $b) => $b['members'] <=> $a['members'] ?: strcmp($a['gid'], $b['gid']));
+            $primary = $groups[0];
+            $primaryGroup = $this->groupManager->get($primary['gid']);
+
+            if (!$primaryGroup) {
+                $errors[] = "Groupe principal introuvable : {$primary['gid']}";
+                continue;
+            }
+
+            // Fusionner les membres des doublons dans le groupe principal
+            foreach (array_slice($groups, 1) as $dup) {
+                $dupGroup = $this->groupManager->get($dup['gid']);
+                if (!$dupGroup) continue;
+
+                // Déplacer les membres
+                foreach ($dupGroup->getUsers() as $user) {
+                    if (!$primaryGroup->inGroup($user)) {
+                        $primaryGroup->addUser($user);
+                        $merged++;
+                    }
+                }
+
+                // Supprimer le doublon
+                try {
+                    $dupGroup->delete();
+                    $deleted++;
+                } catch (\Throwable $e) {
+                    $errors[] = "Impossible de supprimer {$dup['gid']}: " . $e->getMessage();
+                }
+            }
+        }
+
+        return new JSONResponse([
+            'success' => empty($errors),
+            'deleted' => $deleted,
+            'merged'  => $merged,
+            'errors'  => $errors,
+            'message' => "{$deleted} groupe(s) supprimé(s), {$merged} membre(s) fusionné(s)."
+                . (empty($errors) ? '' : ' ' . count($errors) . ' erreur(s).'),
+        ]);
+    }
+
+    /**
+     * Trouve tous les groupes NC dont le displayName apparaît plus d'une fois.
+     * @return array<array{displayName: string, groups: array}>
+     */
+    private function findDuplicateGroups(): array {
+        $byName = [];
+        foreach ($this->groupManager->search('') as $group) {
+            $name = $group->getDisplayName();
+            if (!isset($byName[$name])) {
+                $byName[$name] = [];
+            }
+            $byName[$name][] = [
+                'gid'         => $group->getGID(),
+                'displayName' => $name,
+                'members'     => count($group->getUsers()),
+            ];
+        }
+
+        $duplicates = [];
+        foreach ($byName as $name => $groups) {
+            if (count($groups) > 1) {
+                $duplicates[] = [
+                    'displayName' => $name,
+                    'groups'      => $groups,
+                    'to_keep'     => $groups[0]['gid'],
+                ];
+            }
+        }
+
+        usort($duplicates, fn($a, $b) => strcmp($a['displayName'], $b['displayName']));
+        return $duplicates;
     }
 
     private function getDefault(string $key): string {

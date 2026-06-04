@@ -301,6 +301,31 @@ style('synoldap', 'admin');
             <button id="btn-sync-all" class="synoldap-btn synoldap-btn-warning">
                 🔄 Synchroniser tous les utilisateurs maintenant
             </button>
+            <button id="btn-check-duplicates" class="synoldap-btn synoldap-btn-secondary">
+                🔎 Détecter les groupes dupliqués
+            </button>
+        </div>
+    </div>
+
+    <!-- Purge des groupes dupliqués -->
+    <div id="duplicates-card" class="synoldap-card" style="display:none">
+        <div class="synoldap-card-header" data-toggle="duplicates-section">
+            <span class="synoldap-card-icon">🧹</span>
+            <h3>Groupes dupliqués détectés</h3>
+            <span class="synoldap-toggle-icon">▼</span>
+        </div>
+        <div class="synoldap-card-body" id="duplicates-section">
+            <p class="synoldap-desc">
+                Les doublons ci-dessous ont le même nom. La purge conserve le groupe avec le plus de membres
+                et y fusionne les membres des autres avant de les supprimer.
+            </p>
+            <div id="duplicates-content"></div>
+            <div class="synoldap-actions" style="margin-top:16px">
+                <button id="btn-purge-duplicates" class="synoldap-btn synoldap-btn-warning">
+                    🗑️ Purger les doublons (fusionner + supprimer)
+                </button>
+                <span id="purge-result" class="synoldap-inline-result"></span>
+            </div>
         </div>
     </div>
 

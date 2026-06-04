@@ -7,6 +7,25 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [3.2.3] — 2026-06-04
+
+### Ajouté — Purge des groupes dupliqués
+
+Bouton **"Détecter les groupes dupliqués"** dans les actions admin. Affiche un tableau
+coloré (✓ Garder / ✗ Supprimer) pour chaque groupe ayant le même displayName.
+Bouton **"Purger"** : fusionne les membres + supprime les doublons.
+
+---
+
+## [3.2.2] — 2026-06-04
+
+### Fix — Bridge : suppression de registerPrefixLegacy() + purge oc_preferences user_ldap
+
+- `configuration_prefixes` (type array NC 33) ne s'écrit plus via IConfig (type string)
+- Suppression des `oc_preferences[user_ldap]` orphelines qui faisaient crasher le login
+
+---
+
 ## [3.2.1] — 2026-06-04
 
 ### Fix — UserLdapBridgeService : écriture directe dans oc_appconfig
