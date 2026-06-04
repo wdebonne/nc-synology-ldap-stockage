@@ -250,7 +250,7 @@ style('synoldap', 'admin');
                         <tr>
                             <th class="col-auto" title="Mode : manuel, auto par nom, ou auto par ACL Synology">Mode</th>
                             <th class="col-manual">Groupe AD (LDAP)</th>
-                            <th class="col-manual">Groupe Nextcloud</th>
+                            <th class="col-manual">Groupe NC <span class="synoldap-optional">ou</span> Utilisateur NC</th>
                             <th>Partage SMB</th>
                             <th class="col-manual">Sous-dossier <span class="synoldap-optional">(opt.)</span></th>
                             <th class="col-manual">Point de montage</th>

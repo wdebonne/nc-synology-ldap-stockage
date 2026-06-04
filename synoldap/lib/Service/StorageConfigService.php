@@ -133,18 +133,21 @@ class StorageConfigService {
             }
 
             // ── Mode manuel ────────────────────────────────────────────────────
-            $ncGroup    = trim($mapping['nc_group'] ?? ($mapping['ldap_group'] ?? ''));
+            $ncGroup    = trim($mapping['nc_group']   ?? ($mapping['ldap_group'] ?? ''));
+            $ncUser     = trim($mapping['nc_user']    ?? '');
             $share      = trim($mapping['storage_share'] ?? '');
             $subfolder  = trim($mapping['storage_subfolder'] ?? '');
-            $mountPoint = trim($mapping['mount_point'] ?? $ncGroup);
+            // Mount point : utilise le groupe/utilisateur comme fallback si vide
+            $defaultName = $ncUser ?: $ncGroup;
+            $mountPoint  = trim($mapping['mount_point'] ?? $defaultName);
 
-            if (empty($share) || empty($ncGroup)) {
+            if (empty($share) || (empty($ncGroup) && empty($ncUser))) {
                 continue;
             }
 
             $results[] = $this->doMount(
                 $storagesService, $backend, $authMech, $existingStorages,
-                $ncGroup, $share, $subfolder, $mountPoint, $creds
+                $ncGroup, $share, $subfolder, $mountPoint, $creds, $ncUser
             );
         }
 
@@ -199,17 +202,24 @@ class StorageConfigService {
         string $share,
         string $subfolder,
         string $mountPoint,
-        array $creds
+        array $creds,
+        string $ncUser = ''   // si renseigné : montage par utilisateur au lieu de groupe
     ): array {
-        if (!$this->groupManager->groupExists($ncGroup)) {
-            $this->groupManager->createGroup($ncGroup);
-            $this->logger->info("[SynoLDAP] Groupe Nextcloud créé lors du montage: {$ncGroup}");
+        $byUser = ($ncUser !== '');
+
+        if (!$byUser) {
+            if (!$this->groupManager->groupExists($ncGroup)) {
+                $this->groupManager->createGroup($ncGroup);
+                $this->logger->info("[SynoLDAP] Groupe Nextcloud créé lors du montage: {$ncGroup}");
+            }
         }
 
         $mountPoint = '/' . ltrim($mountPoint, '/');
 
         try {
-            $existingMount  = $this->findExistingMount($existingStorages, $ncGroup, $mountPoint);
+            $existingMount = $byUser
+                ? $this->findExistingMountForUser($existingStorages, $ncUser, $mountPoint)
+                : $this->findExistingMount($existingStorages, $ncGroup, $mountPoint);
             $backendOptions = [
                 'host'   => $creds['host'],
                 'share'  => $share,
@@ -243,27 +253,46 @@ class StorageConfigService {
                 $storageConfig->setAuthMechanism($authMech);
                 $storageConfig->setBackendOptions($backendOptions);
                 $storageConfig->setAuthOptions($authOptions);
-                $storageConfig->setApplicableGroups([$ncGroup]);
+                if ($byUser) {
+                    $storageConfig->setApplicableUsers([$ncUser]);
+                } else {
+                    $storageConfig->setApplicableGroups([$ncGroup]);
+                }
                 $storagesService->addStorage($storageConfig);
                 $action = 'créé';
             }
 
             $path = "//{$creds['host']}/{$share}" . ($subfolder ? "/{$subfolder}" : '');
+            $target = $byUser ? $ncUser : $ncGroup;
             return [
                 'status'  => 'ok',
-                'group'   => $ncGroup,
+                'group'   => $target,
                 'mount'   => $mountPoint,
                 'share'   => $share,
-                'message' => "Montage {$action} : {$mountPoint} → {$path}",
+                'message' => "Montage {$action} : {$mountPoint} → {$path} (" . ($byUser ? "user: {$ncUser}" : "groupe: {$ncGroup}") . ")",
             ];
         } catch (\Throwable $e) {
-            $this->logger->error("[SynoLDAP] Erreur montage {$ncGroup}: " . $e->getMessage());
+            $target = $byUser ? $ncUser : $ncGroup;
+            $this->logger->error("[SynoLDAP] Erreur montage {$target}: " . $e->getMessage());
             return [
                 'status'  => 'error',
-                'group'   => $ncGroup,
+                'group'   => $target,
                 'message' => $e->getMessage(),
             ];
         }
+    }
+
+    private function findExistingMountForUser(array $storages, string $userName, string $mountPoint): mixed {
+        foreach ($storages as $storage) {
+            $users = $storage->getApplicableUsers();
+            if (
+                in_array($userName, $users, true) &&
+                '/' . ltrim($storage->getMountPoint(), '/') === $mountPoint
+            ) {
+                return $storage;
+            }
+        }
+        return null;
     }
 
     private function findExistingMount(array $storages, string $groupName, string $mountPoint): mixed {

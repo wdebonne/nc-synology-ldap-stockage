@@ -161,11 +161,15 @@
 
             if (mode === 'manual') {
                 const ldapGroup = val(row, 'ldap_group');
-                if (!ldapGroup) return;
+                const ncUser    = val(row, 'nc_user');
+                const ncGroup   = val(row, 'nc_group');
+                // Au moins ldap_group OU nc_user doit être renseigné
+                if (!ldapGroup && !ncUser) return;
                 mappings.push({
                     auto_mode:         false,
                     ldap_group:        ldapGroup,
-                    nc_group:          val(row, 'nc_group'),
+                    nc_group:          ncGroup,
+                    nc_user:           ncUser,
                     storage_share:     val(row, 'storage_share'),
                     storage_subfolder: val(row, 'storage_subfolder'),
                     mount_point:       val(row, 'mount_point'),
@@ -209,17 +213,35 @@
     }
 
     function buildManualCells(data) {
+        // Détecter si c'est un montage par utilisateur
+        const isUser = !!(data.nc_user && !data.nc_group);
         return `
             <td><input type="text" class="synoldap-table-input" value="${esc(data.ldap_group || '')}"
                 placeholder="Compta" data-field="ldap_group" /></td>
-            <td><input type="text" class="synoldap-table-input" value="${esc(data.nc_group || '')}"
-                placeholder="(= Groupe AD)" data-field="nc_group" /></td>
+            <td class="nc-target-cell">
+                <div class="nc-target-toggle">
+                    <label class="nc-target-label">
+                        <input type="radio" name="nc_target_${Date.now()}_type" value="group"
+                            class="nc-type-radio" ${isUser ? '' : 'checked'} />
+                        Groupe
+                    </label>
+                    <label class="nc-target-label">
+                        <input type="radio" name="nc_target_${Date.now()}_type" value="user"
+                            class="nc-type-radio" ${isUser ? 'checked' : ''} />
+                        Utilisateur
+                    </label>
+                </div>
+                <input type="text" class="synoldap-table-input nc-group-input ${isUser ? 'hidden' : ''}"
+                    value="${esc(data.nc_group || '')}" placeholder="(= Groupe AD)" data-field="nc_group" />
+                <input type="text" class="synoldap-table-input nc-user-input ${isUser ? '' : 'hidden'}"
+                    value="${esc(data.nc_user || '')}" placeholder="uid.utilisateur" data-field="nc_user" />
+            </td>
             <td><input type="text" class="synoldap-table-input" value="${esc(data.storage_share || '')}"
-                placeholder="Externe" data-field="storage_share" /></td>
+                placeholder="NextCloud" data-field="storage_share" /></td>
             <td><input type="text" class="synoldap-table-input" value="${esc(data.storage_subfolder || '')}"
-                placeholder="" data-field="storage_subfolder" /></td>
+                placeholder="Compta" data-field="storage_subfolder" /></td>
             <td><input type="text" class="synoldap-table-input" value="${esc(data.mount_point || '')}"
-                placeholder="/Compta" data-field="mount_point" /></td>
+                placeholder="/NAS/Compta" data-field="mount_point" /></td>
             <td></td>`;
     }
 
@@ -313,6 +335,17 @@
                 if (!mpIn.value) mpIn.placeholder = '/' + (ldapIn.value || 'Compta');
             });
         }
+
+        // Toggle Groupe ↔ Utilisateur NC
+        row.querySelectorAll('.nc-type-radio').forEach(radio => {
+            radio.addEventListener('change', function () {
+                const isUser = this.value === 'user';
+                const groupIn = row.querySelector('.nc-group-input');
+                const userIn  = row.querySelector('.nc-user-input');
+                if (groupIn) groupIn.classList.toggle('hidden', isUser);
+                if (userIn)  userIn.classList.toggle('hidden', !isUser);
+            });
+        });
     }
 
     // ─── Save config ─────────────────────────────────────────────────────────
