@@ -11,6 +11,7 @@ return [
         ['name' => 'admin#getLdapGroups',   'url' => '/admin/ldap-groups',      'verb' => 'GET'],
         // API DSM Synology
         ['name' => 'admin#testDsmApi',      'url' => '/admin/test-dsm-api',     'verb' => 'POST'],
+        ['name' => 'admin#testSmb',          'url' => '/admin/test-smb',         'verb' => 'POST'],
         ['name' => 'admin#discoverAcl',     'url' => '/admin/discover-acl',     'verb' => 'GET'],
         ['name' => 'admin#clearAclCache',   'url' => '/admin/clear-acl-cache',  'verb' => 'POST'],
     ],

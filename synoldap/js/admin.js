@@ -56,7 +56,7 @@
         content.scrollTop = content.scrollHeight;
     }
 
-    // ─── Section toggles ─────────────────────────────────────────────────────
+    // ─── Section collapse toggles ────────────────────────────────────────────
 
     function initSectionToggles() {
         document.querySelectorAll('.synoldap-card-header[data-toggle]').forEach(header => {
@@ -66,6 +66,54 @@
                 const collapsed = body.style.display === 'none';
                 body.style.display = collapsed ? '' : 'none';
                 icon.textContent = collapsed ? '▼' : '▶';
+            });
+        });
+    }
+
+    // ─── Section enable / disable toggles ────────────────────────────────────
+
+    const LS_KEY = 'synoldap_sections_enabled';
+
+    function getSectionStates() {
+        try {
+            return JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+        } catch { return {}; }
+    }
+
+    function saveSectionState(section, enabled) {
+        const states = getSectionStates();
+        states[section] = enabled;
+        localStorage.setItem(LS_KEY, JSON.stringify(states));
+    }
+
+    function applySectionState(cb) {
+        const card    = document.getElementById('card-' + cb.dataset.section);
+        const enabled = cb.checked;
+        if (!card) return;
+        card.classList.toggle('section-disabled', !enabled);
+        // Désactiver/réactiver tous les inputs du body pour empêcher l'édition
+        card.querySelectorAll('.synoldap-card-body input, .synoldap-card-body select, .synoldap-card-body button').forEach(el => {
+            el.disabled = !enabled;
+        });
+    }
+
+    function initSectionEnableToggles() {
+        const states = getSectionStates();
+        document.querySelectorAll('.section-enable-cb').forEach(cb => {
+            const section = cb.dataset.section;
+            // Restaurer l'état sauvegardé (si inexistant → activé par défaut)
+            const enabled = states[section] !== undefined ? states[section] : true;
+            cb.checked = enabled;
+            applySectionState(cb);
+
+            cb.addEventListener('change', () => {
+                saveSectionState(section, cb.checked);
+                applySectionState(cb);
+                showStatus(
+                    'Section "' + cb.closest('.synoldap-card-header').querySelector('h3').textContent.trim() +
+                    '" ' + (cb.checked ? 'activée.' : 'désactivée.'),
+                    cb.checked ? 'success' : 'warning'
+                );
             });
         });
     }
@@ -348,6 +396,33 @@
         }
     }
 
+    // ─── Test SMB ────────────────────────────────────────────────────────────
+
+    async function testSmb() {
+        const btn    = document.getElementById('btn-test-smb');
+        const result = document.getElementById('smb-test-result');
+        btn.disabled = true;
+        btn.textContent = '⏳ Test…';
+        result.textContent = '';
+
+        try {
+            const res = await apiFetch('/admin/test-smb', 'POST', {});
+            result.className = 'synoldap-inline-result ' + (res.success ? 'synoldap-ok' : 'synoldap-err');
+            result.textContent = (res.success ? '✓ ' : '✗ ') + res.message;
+            showLog('Test SMB : ' + res.message, res.success ? 'success' : 'error');
+
+            if (res.success && res.shares && res.shares.length > 0) {
+                showLog('  Partages disponibles : ' + res.shares.join(', '), 'info');
+            }
+        } catch (e) {
+            result.className = 'synoldap-inline-result synoldap-err';
+            result.textContent = '✗ ' + e.message;
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '🖥️ Tester la connexion SMB';
+        }
+    }
+
     // ─── Test API DSM ────────────────────────────────────────────────────────
 
     async function testDsmApi() {
@@ -509,9 +584,11 @@
 
     document.addEventListener('DOMContentLoaded', () => {
         initSectionToggles();
+        initSectionEnableToggles();
         loadConfig();
 
         document.getElementById('btn-test-ldap').addEventListener('click', testLdap);
+        document.getElementById('btn-test-smb').addEventListener('click', testSmb);
         document.getElementById('btn-test-dsm-api').addEventListener('click', testDsmApi);
         document.getElementById('btn-save').addEventListener('click', saveConfig);
         document.getElementById('btn-sync-all').addEventListener('click', syncAll);

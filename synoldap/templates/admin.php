@@ -17,10 +17,14 @@ style('synoldap', 'admin');
     <div id="synoldap-status-bar" class="synoldap-status" style="display:none"></div>
 
     <!-- Section 1 : LDAP -->
-    <div class="synoldap-card">
+    <div class="synoldap-card" id="card-ldap">
         <div class="synoldap-card-header" data-toggle="ldap-section">
             <span class="synoldap-card-icon">🔌</span>
             <h3>1. Connexion LDAP / Active Directory</h3>
+            <label class="synoldap-section-toggle" title="Activer / Désactiver cette section" onclick="event.stopPropagation()">
+                <input type="checkbox" class="section-enable-cb" data-section="ldap" checked />
+                <span class="synoldap-toggle-track"><span class="synoldap-toggle-thumb"></span></span>
+            </label>
             <span class="synoldap-toggle-icon">▼</span>
         </div>
         <div class="synoldap-card-body" id="ldap-section">
@@ -84,7 +88,7 @@ style('synoldap', 'admin');
 
             <div class="synoldap-actions">
                 <button id="btn-test-ldap" class="synoldap-btn synoldap-btn-secondary">
-                    🔍 Tester la connexion
+                    🔍 Tester la connexion LDAP
                 </button>
                 <span id="ldap-test-result" class="synoldap-inline-result"></span>
             </div>
@@ -96,11 +100,15 @@ style('synoldap', 'admin');
         </div>
     </div>
 
-    <!-- Section 2 : Stockage Synology + API DSM -->
-    <div class="synoldap-card">
+    <!-- Section 2 : Stockage Synology (SMB + API DSM) -->
+    <div class="synoldap-card" id="card-storage">
         <div class="synoldap-card-header" data-toggle="storage-section">
             <span class="synoldap-card-icon">🗄️</span>
             <h3>2. Connexion Synology (SMB + API DSM)</h3>
+            <label class="synoldap-section-toggle" title="Activer / Désactiver cette section" onclick="event.stopPropagation()">
+                <input type="checkbox" class="section-enable-cb" data-section="storage" checked />
+                <span class="synoldap-toggle-track"><span class="synoldap-toggle-thumb"></span></span>
+            </label>
             <span class="synoldap-toggle-icon">▼</span>
         </div>
         <div class="synoldap-card-body" id="storage-section">
@@ -130,6 +138,13 @@ style('synoldap', 'admin');
                     <input type="password" id="synology_smb_password" name="synology_smb_password"
                            placeholder="(inchangé si vide)" autocomplete="new-password" />
                 </div>
+            </div>
+
+            <div class="synoldap-actions">
+                <button id="btn-test-smb" class="synoldap-btn synoldap-btn-secondary">
+                    🖥️ Tester la connexion SMB
+                </button>
+                <span id="smb-test-result" class="synoldap-inline-result"></span>
             </div>
 
             <hr class="synoldap-separator" />
@@ -177,10 +192,14 @@ style('synoldap', 'admin');
     </div>
 
     <!-- Section 3 : Groupe Admin -->
-    <div class="synoldap-card">
+    <div class="synoldap-card" id="card-admin-group">
         <div class="synoldap-card-header" data-toggle="admin-section">
             <span class="synoldap-card-icon">👑</span>
             <h3>3. Promotion automatique Administrateur</h3>
+            <label class="synoldap-section-toggle" title="Activer / Désactiver cette section" onclick="event.stopPropagation()">
+                <input type="checkbox" class="section-enable-cb" data-section="admin-group" checked />
+                <span class="synoldap-toggle-track"><span class="synoldap-toggle-thumb"></span></span>
+            </label>
             <span class="synoldap-toggle-icon">▼</span>
         </div>
         <div class="synoldap-card-body" id="admin-section">
@@ -198,10 +217,14 @@ style('synoldap', 'admin');
     </div>
 
     <!-- Section 4 : Correspondances Groupes / Stockage -->
-    <div class="synoldap-card">
+    <div class="synoldap-card" id="card-mappings">
         <div class="synoldap-card-header" data-toggle="mappings-section">
             <span class="synoldap-card-icon">🗂️</span>
             <h3>4. Correspondances Groupes ↔ Stockage</h3>
+            <label class="synoldap-section-toggle" title="Activer / Désactiver cette section" onclick="event.stopPropagation()">
+                <input type="checkbox" class="section-enable-cb" data-section="mappings" checked />
+                <span class="synoldap-toggle-track"><span class="synoldap-toggle-thumb"></span></span>
+            </label>
             <span class="synoldap-toggle-icon">▼</span>
         </div>
         <div class="synoldap-card-body" id="mappings-section">

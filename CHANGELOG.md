@@ -7,6 +7,33 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [3.1.1] — 2026-06-04
+
+### Ajouté — Interface admin : test SMB + toggles activer/désactiver par section
+
+#### Bouton "Tester la connexion SMB"
+
+Nouveau bouton dans la section "Connexion Synology" qui effectue deux vérifications successives :
+1. **Connectivité réseau** (port 445) — vérifie si le Synology est joignable depuis le serveur NC
+2. **Authentification SMB** via `icewind/smb` (bundlé avec NC's `files_external`) — liste les partages SMB accessibles avec les credentials configurés
+
+Endpoint : `POST /admin/test-smb` → `AdminController::testSmb()`
+
+#### Toggles activer/désactiver par section
+
+Chaque bloc de l'interface admin dispose désormais d'un switch ON/OFF dans son entête :
+- Section **LDAP** (🔌)
+- Section **Synology SMB + API DSM** (🗄️)
+- Section **Promotion Admin** (👑)
+- Section **Correspondances Groupes ↔ Stockage** (🗂️)
+
+Comportement :
+- L'état est sauvegardé dans `localStorage` → persistant entre les rechargements
+- Section désactivée : contenu grisé + barré + tous les inputs non cliquables
+- Le clic sur le switch ne déclenche pas le collapse/expand de la section (events séparés)
+
+---
+
 ## [3.1.0] — 2026-06-04
 
 ### Refactoring architecture — Table de mapping persistante (pattern user_ldap)

@@ -124,6 +124,67 @@ class AdminController extends Controller {
     }
 
     /**
+     * Teste la connexion SMB vers le Synology.
+     * Essaie de lister les partages disponibles avec les credentials configurés.
+     *
+     * @AdminRequired
+     */
+    #[AdminRequired]
+    public function testSmb(): JSONResponse {
+        $host   = $this->config->getAppValue(self::APP_ID, 'synology_host', '');
+        $user   = $this->config->getAppValue(self::APP_ID, 'synology_smb_user', '');
+        $pass   = $this->config->getAppValue(self::APP_ID, 'synology_smb_password', '');
+        $domain = $this->config->getAppValue(self::APP_ID, 'synology_smb_domain', 'WORKGROUP');
+
+        if (empty($host)) {
+            return new JSONResponse(['success' => false, 'message' => 'Hôte Synology non configuré.']);
+        }
+        if (empty($user)) {
+            return new JSONResponse(['success' => false, 'message' => 'Utilisateur SMB non configuré.']);
+        }
+
+        // Test 1 : connectivité réseau sur le port SMB
+        $socket = @fsockopen($host, 445, $errno, $errstr, 5);
+        if (!$socket) {
+            return new JSONResponse([
+                'success' => false,
+                'message' => "Port SMB (445) inaccessible sur {$host} — {$errstr} ({$errno})",
+            ]);
+        }
+        fclose($socket);
+
+        // Test 2 : authentification SMB via la bibliothèque icewind/smb (bundlée avec files_external)
+        if (!class_exists(\Icewind\SMB\BasicAuth::class)) {
+            return new JSONResponse([
+                'success' => true,
+                'message' => "Port 445 accessible sur {$host}. (Test auth ignoré — files_external non activée)",
+            ]);
+        }
+
+        try {
+            $auth    = new \Icewind\SMB\BasicAuth($user, $domain, $pass);
+            $factory = new \Icewind\SMB\ServerFactory();
+            $server  = $factory->createServer($host, $auth);
+            $shares  = $server->listShares();
+            $names   = array_filter(
+                array_map(fn($s) => $s->getName(), $shares),
+                fn($n) => !str_starts_with($n, 'IPC') && !str_ends_with($n, '$')
+            );
+            $count = count($names);
+            return new JSONResponse([
+                'success' => true,
+                'message' => "Connexion SMB réussie — {$count} partage(s) visible(s) : " . implode(', ', array_values($names)),
+                'shares'  => array_values($names),
+            ]);
+        } catch (\Throwable $e) {
+            return new JSONResponse([
+                'success' => false,
+                'message' => "Authentification SMB échouée : " . $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
      * Prévisualise les mappings ACL découverts sur un partage Synology.
      * Résultat : ['Compta' => ['Responsable', 'Compta'], 'RH' => ['RH'], ...]
      *

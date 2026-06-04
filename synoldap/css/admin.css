@@ -79,6 +79,61 @@
 .synoldap-card-icon { font-size: 18px; }
 .synoldap-toggle-icon { color: var(--color-text-maxcontrast, #888); font-size: 12px; }
 
+/* ─── Toggle activer / désactiver section ─────────────────────────────────── */
+.synoldap-section-toggle {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    margin-left: auto;
+    margin-right: 8px;
+    flex-shrink: 0;
+}
+.synoldap-section-toggle input[type="checkbox"] {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+.synoldap-toggle-track {
+    display: inline-flex;
+    align-items: center;
+    width: 36px;
+    height: 20px;
+    background: var(--color-border-dark, #bbb);
+    border-radius: 10px;
+    padding: 2px;
+    transition: background 0.2s;
+}
+.synoldap-section-toggle input:checked + .synoldap-toggle-track {
+    background: var(--color-primary, #0082c9);
+}
+.synoldap-toggle-thumb {
+    display: block;
+    width: 16px;
+    height: 16px;
+    background: #fff;
+    border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0,0,0,.25);
+    transition: transform 0.2s;
+}
+.synoldap-section-toggle input:checked + .synoldap-toggle-track .synoldap-toggle-thumb {
+    transform: translateX(16px);
+}
+
+/* Section désactivée */
+.synoldap-card.section-disabled .synoldap-card-body {
+    opacity: 0.45;
+    pointer-events: none;
+    filter: grayscale(0.4);
+}
+.synoldap-card.section-disabled .synoldap-card-header {
+    background: var(--color-background-dark, #f0f0f0);
+}
+.synoldap-card.section-disabled .synoldap-card-header h3 {
+    color: var(--color-text-maxcontrast, #999);
+    text-decoration: line-through;
+}
+
 .synoldap-card-body {
     padding: 20px;
 }
