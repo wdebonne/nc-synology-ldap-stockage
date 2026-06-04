@@ -302,3 +302,4 @@ class SynologyApiService {
             $this->logout($sid);
         }
     }
+}
