@@ -19,7 +19,7 @@ use OCP\Migration\SimpleMigrationStep;
  *
  * C'est ce comportement qui rend user_ldap stable avec NC 33.
  */
-class Version3001Date20260603 extends SimpleMigrationStep {
+class Version3001Date20260604000000 extends SimpleMigrationStep {
     public function changeSchema(IOutput $output, Closure $schemaClosure, array $options): ?ISchemaWrapper {
         /** @var ISchemaWrapper $schema */
         $schema = $schemaClosure();
