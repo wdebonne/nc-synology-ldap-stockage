@@ -7,6 +7,30 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [3.2.9] — 2026-06-04
+
+### Fix — ACL DSM : erreur 403 sur `SYNO.Core.ACL` (lecture des droits impossible)
+
+Le diagnostic ACL brut renvoyait `{"error":{"code":403},"success":false}` pour chaque
+sous-dossier alors que le listage (`SYNO.FileStation.List`) réussissait et que le compte
+API était bien administrateur DSM.
+
+- **Cause racine** — les API privilégiées `SYNO.Core.*` (dont `SYNO.Core.ACL`) refusent le
+  SID transmis en paramètre GET `_sid`. Elles exigent le SID en **cookie** (`id=<sid>`) et un
+  jeton CSRF **SynoToken** (paramètre `SynoToken` + en-tête `X-SYNO-TOKEN`). Sans cela, DSM
+  répond 403 même pour un administrateur.
+- **Correctif** — `login()` demande désormais `enable_syno_token=yes` et mémorise le
+  `synotoken` retourné. `apiGet()` transmet le SID en cookie et joint le SynoToken (paramètre
+  + en-tête) à chaque appel authentifié. `logout()` réinitialise le jeton.
+
+### Fix — Accolade fermante manquante dans `SynologyApiService`
+
+L'ajout de `getRawAcl()` (v3.2.8) avait supprimé l'accolade fermante de la classe, provoquant
+une erreur de parsing PHP. Conséquence : `AdminController` ne pouvait plus être instancié et
+**toutes** les routes admin renvoyaient HTTP 500 (dont `GET /admin/config`). Accolade rétablie.
+
+---
+
 ## [3.2.5] — 2026-06-04
 
 ### Fix — Test SMB : « ForbiddenException » avec des identifiants valides

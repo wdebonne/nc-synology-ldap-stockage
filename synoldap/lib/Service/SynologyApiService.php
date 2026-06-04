@@ -11,6 +11,12 @@ class SynologyApiService {
     private const APP_ID  = 'synoldap';
     private const CACHE_TTL = 3600; // secondes
 
+    /**
+     * Jeton CSRF (SynoToken) obtenu au login, requis par les API privilégiées
+     * SYNO.Core.* qui refusent le SID passé en paramètre GET (erreur 403).
+     */
+    private ?string $synoToken = null;
+
     public function __construct(
         private IConfig $config,
         private ICacheFactory $cacheFactory,
@@ -45,6 +51,10 @@ class SynologyApiService {
         $query = array_merge(['api' => $api, 'version' => $version, 'method' => $method], $params);
         if ($sid !== null) {
             $query['_sid'] = $sid;
+            // Les API privilégiées (SYNO.Core.*) exigent le SynoToken (CSRF).
+            if ($this->synoToken !== null) {
+                $query['SynoToken'] = $this->synoToken;
+            }
         }
         $url = $base . '/entry.cgi?' . http_build_query($query);
 
@@ -53,14 +63,23 @@ class SynologyApiService {
         }
 
         $ch = curl_init($url);
-        curl_setopt_array($ch, [
+        $opts = [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT        => 10,
             CURLOPT_CONNECTTIMEOUT => 5,
             CURLOPT_SSL_VERIFYPEER => false,
             CURLOPT_SSL_VERIFYHOST => 0,
             CURLOPT_FOLLOWLOCATION => false,
-        ]);
+        ];
+        // Le SID est aussi transmis en cookie « id » : indispensable pour les
+        // API privilégiées SYNO.Core.* qui ignorent le _sid en paramètre GET.
+        if ($sid !== null) {
+            $opts[CURLOPT_COOKIE] = 'id=' . $sid;
+            if ($this->synoToken !== null) {
+                $opts[CURLOPT_HTTPHEADER] = ['X-SYNO-TOKEN: ' . $this->synoToken];
+            }
+        }
+        curl_setopt_array($ch, $opts);
 
         $raw    = curl_exec($ch);
         $errno  = curl_errno($ch);
@@ -90,10 +109,11 @@ class SynologyApiService {
         }
 
         $res = $this->apiGet('SYNO.API.Auth', 6, 'login', [
-            'account' => $user,
-            'passwd'  => $pass,
-            'session' => 'synoldap',
-            'format'  => 'sid',
+            'account'           => $user,
+            'passwd'            => $pass,
+            'session'           => 'synoldap',
+            'format'            => 'sid',
+            'enable_syno_token' => 'yes',
         ]);
 
         if (empty($res['success']) || empty($res['data']['sid'])) {
@@ -108,6 +128,9 @@ class SynologyApiService {
             throw new \RuntimeException($msg);
         }
 
+        // Mémoriser le SynoToken pour les appels privilégiés (SYNO.Core.*).
+        $this->synoToken = $res['data']['synotoken'] ?? null;
+
         return $res['data']['sid'];
     }
 
@@ -117,6 +140,7 @@ class SynologyApiService {
         } catch (\Throwable) {
             // Échec de logout non bloquant
         }
+        $this->synoToken = null;
     }
 
     // ─── Public API ──────────────────────────────────────────────────────────

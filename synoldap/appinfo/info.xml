@@ -17,7 +17,7 @@ Uses the same architecture as user_ldap (persistent user mapping table) for stab
 - Identical Windows / Nextcloud folder structure via Mount Prefix field (/NAS/Accounting, etc.)
 - Visual admin interface with real-time ACL preview and SMB configuration
     ]]></description>
-    <version>3.2.8</version>
+    <version>3.2.9</version>
     <licence>agpl</licence>
     <author homepage="https://github.com/wdebonne">wdebonne</author>
     <namespace>SynoLDAP</namespace>
