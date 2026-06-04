@@ -45,6 +45,73 @@ class GroupSyncService {
     }
 
     /**
+     * Retourne le groupe Nextcloud correspondant à un nom, en réutilisant un groupe
+     * existant plutôt qu'en créant un doublon.
+     *
+     * Cas critique : user_ldap expose un groupe AD avec un GID suffixé ("Nom_2")
+     * lorsque le GID "Nom" est déjà pris. Une recherche par displayName permet de
+     * réutiliser ce groupe LDAP au lieu de créer un groupe base de données "Nom"
+     * (ce qui provoquait des doublons impossibles à purger).
+     */
+    private function resolveNcGroup(string $name): ?\OCP\IGroup {
+        $group = $this->groupManager->get($name);
+        if ($group !== null) {
+            return $group;
+        }
+
+        // Réutiliser un groupe existant de même displayName (privilégier le backend LDAP).
+        $fallback = null;
+        foreach ($this->groupManager->search($name) as $candidate) {
+            if ($candidate->getDisplayName() !== $name) {
+                continue;
+            }
+            if ($this->isLdapBackedGroup($candidate)) {
+                return $candidate;
+            }
+            $fallback ??= $candidate;
+        }
+        if ($fallback !== null) {
+            return $fallback;
+        }
+
+        $group = $this->groupManager->createGroup($name);
+        if ($group !== null) {
+            $this->logger->info("[SynoLDAP] Groupe NC créé: {$name}");
+        }
+        return $group;
+    }
+
+    private function isLdapBackedGroup(\OCP\IGroup $group): bool {
+        foreach ($group->getBackendNames() as $backend) {
+            if (stripos($backend, 'ldap') !== false) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Ajoute l'utilisateur au groupe uniquement si le backend l'autorise.
+     * Un groupe LDAP refuse addUser (l'appartenance vient de l'AD) — on l'ignore alors
+     * silencieusement pour éviter l'exception "Could not add user to group in LDAP backend".
+     */
+    private function addUserSafely(\OCP\IGroup $group, IUser $user): bool {
+        if ($group->inGroup($user) || !$group->canAddUser()) {
+            return false;
+        }
+        $group->addUser($user);
+        return true;
+    }
+
+    private function removeUserSafely(\OCP\IGroup $group, IUser $user): bool {
+        if (!$group->inGroup($user) || !$group->canRemoveUser()) {
+            return false;
+        }
+        $group->removeUser($user);
+        return true;
+    }
+
+    /**
      * Synchronise le profil (displayName, email) et les groupes Nextcloud d'un utilisateur
      * d'après l'AD au moment de la connexion.
      */
@@ -156,20 +223,15 @@ class GroupSyncService {
 
             $mappedLdapGroups[] = $ldapGroupName;
             $inLdapGroup = in_array($ldapGroupName, $ldapGroups, true);
-            $ncGroup     = $this->groupManager->get($ncGroupName);
 
             if ($inLdapGroup) {
-                if (!$ncGroup) {
-                    $ncGroup = $this->groupManager->createGroup($ncGroupName);
-                    $this->logger->info("[SynoLDAP] Groupe NC créé: {$ncGroupName}");
-                }
-                if ($ncGroup && !$ncGroup->inGroup($user)) {
-                    $ncGroup->addUser($user);
+                $ncGroup = $this->resolveNcGroup($ncGroupName);
+                if ($ncGroup && $this->addUserSafely($ncGroup, $user)) {
                     $this->logger->info("[SynoLDAP] {$user->getUID()} ajouté au groupe {$ncGroupName}");
                 }
             } else {
-                if ($ncGroup && $ncGroup->inGroup($user)) {
-                    $ncGroup->removeUser($user);
+                $ncGroup = $this->groupManager->get($ncGroupName);
+                if ($ncGroup && $this->removeUserSafely($ncGroup, $user)) {
                     $this->logger->info("[SynoLDAP] {$user->getUID()} retiré du groupe {$ncGroupName}");
                 }
             }
@@ -185,13 +247,8 @@ class GroupSyncService {
             if (in_array($ldapGroup, $mappedLdapGroups, true)) {
                 continue; // déjà géré par mapping manuel
             }
-            $ncGroup = $this->groupManager->get($ldapGroup);
-            if (!$ncGroup) {
-                $ncGroup = $this->groupManager->createGroup($ldapGroup);
-                $this->logger->info("[SynoLDAP] Groupe NC auto-créé depuis AD: {$ldapGroup}");
-            }
-            if ($ncGroup && !$ncGroup->inGroup($user)) {
-                $ncGroup->addUser($user);
+            $ncGroup = $this->resolveNcGroup($ldapGroup);
+            if ($ncGroup && $this->addUserSafely($ncGroup, $user)) {
                 $this->logger->info("[SynoLDAP] {$uid} ajouté au groupe AD direct: {$ldapGroup}");
             }
         }
@@ -256,8 +313,9 @@ class GroupSyncService {
                     continue;
                 }
 
-                $this->ensureNcGroupMember($user, $ldapGroup);
-                $this->storageConfigService->ensureGroupMount($ldapGroup, $rootShare, $folderName, $prefix);
+                $ncGroup = $this->ensureNcGroupMember($user, $ldapGroup);
+                $mountGid = $ncGroup ? $ncGroup->getGID() : $ldapGroup;
+                $this->storageConfigService->ensureGroupMount($mountGid, $rootShare, $folderName, $prefix);
                 break; // un seul montage par dossier même si plusieurs groupes de l'user y ont accès
             }
         }
@@ -275,21 +333,18 @@ class GroupSyncService {
                 continue;
             }
 
-            $this->ensureNcGroupMember($user, $ldapGroup);
-            $this->storageConfigService->ensureGroupMount($ldapGroup, $rootShare, $ldapGroup, $prefix);
+            $ncGroup = $this->ensureNcGroupMember($user, $ldapGroup);
+            $mountGid = $ncGroup ? $ncGroup->getGID() : $ldapGroup;
+            $this->storageConfigService->ensureGroupMount($mountGid, $rootShare, $ldapGroup, $prefix);
         }
     }
 
-    private function ensureNcGroupMember(IUser $user, string $groupName): void {
-        $ncGroup = $this->groupManager->get($groupName);
-        if (!$ncGroup) {
-            $ncGroup = $this->groupManager->createGroup($groupName);
-            $this->logger->info("[SynoLDAP] Groupe auto créé: {$groupName}");
-        }
-        if ($ncGroup && !$ncGroup->inGroup($user)) {
-            $ncGroup->addUser($user);
+    private function ensureNcGroupMember(IUser $user, string $groupName): ?\OCP\IGroup {
+        $ncGroup = $this->resolveNcGroup($groupName);
+        if ($ncGroup && $this->addUserSafely($ncGroup, $user)) {
             $this->logger->info("[SynoLDAP] {$user->getUID()} ajouté au groupe auto {$groupName}");
         }
+        return $ncGroup;
     }
 
     /**

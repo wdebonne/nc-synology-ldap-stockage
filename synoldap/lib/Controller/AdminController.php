@@ -13,6 +13,7 @@ use OCP\AppFramework\Http\Attribute\AdminRequired;
 use OCP\AppFramework\Http\Attribute\NoCSRFRequired;
 use OCP\AppFramework\Http\JSONResponse;
 use OCP\IConfig;
+use OCP\IDBConnection;
 use OCP\IGroupManager;
 use OCP\IRequest;
 
@@ -350,36 +351,48 @@ class AdminController extends Controller {
         $duplicates = $this->findDuplicateGroups();
         $deleted  = 0;
         $merged   = 0;
+        $skipped  = 0;
         $errors   = [];
 
         foreach ($duplicates as $entry) {
-            $groups  = $entry['groups']; // [['gid' => ..., 'displayName' => ..., 'members' => ...], ...]
+            $groups = $entry['groups']; // [['gid' => ..., 'displayName' => ..., 'members' => ..., 'ldap' => bool], ...]
             if (count($groups) < 2) continue;
 
-            // Conserver le groupe avec le plus de membres (ou le premier par ordre alpha)
-            usort($groups, fn($a, $b) => $b['members'] <=> $a['members'] ?: strcmp($a['gid'], $b['gid']));
+            // Le survivant est le premier élément (cf. findDuplicateGroups : groupe LDAP
+            // privilégié, sinon celui ayant le plus de membres). Un groupe LDAP ne peut
+            // pas être supprimé (l'appartenance vient de l'AD) — on le conserve donc.
             $primary = $groups[0];
             $primaryGroup = $this->groupManager->get($primary['gid']);
-
             if (!$primaryGroup) {
                 $errors[] = "Groupe principal introuvable : {$primary['gid']}";
                 continue;
             }
+            $primaryCanAddUser = $primaryGroup->canAddUser();
 
-            // Fusionner les membres des doublons dans le groupe principal
             foreach (array_slice($groups, 1) as $dup) {
                 $dupGroup = $this->groupManager->get($dup['gid']);
                 if (!$dupGroup) continue;
 
-                // Déplacer les membres
-                foreach ($dupGroup->getUsers() as $user) {
-                    if (!$primaryGroup->inGroup($user)) {
-                        $primaryGroup->addUser($user);
-                        $merged++;
+                // Un doublon LDAP ne peut pas être supprimé depuis Nextcloud : il faut
+                // le retirer côté Active Directory. On le signale sans lever d'exception.
+                if (!empty($dup['ldap'])) {
+                    $skipped++;
+                    $errors[] = "Groupe LDAP non supprimable depuis Nextcloud : {$dup['gid']} "
+                        . "(displayName \"{$dup['displayName']}\"). Supprimez-le côté Active Directory.";
+                    continue;
+                }
+
+                // Fusionner les membres dans le survivant (uniquement si celui-ci accepte
+                // l'ajout — un groupe LDAP refuse addUser).
+                if ($primaryCanAddUser) {
+                    foreach ($dupGroup->getUsers() as $user) {
+                        if (!$primaryGroup->inGroup($user)) {
+                            $primaryGroup->addUser($user);
+                            $merged++;
+                        }
                     }
                 }
 
-                // Supprimer le doublon
                 try {
                     $dupGroup->delete();
                     $deleted++;
@@ -389,13 +402,23 @@ class AdminController extends Controller {
             }
         }
 
+        $message = "{$deleted} groupe(s) supprimé(s), {$merged} membre(s) fusionné(s).";
+        if ($skipped > 0) {
+            $message .= " {$skipped} groupe(s) LDAP ignoré(s) (à supprimer dans l'AD).";
+        }
+        if (!empty($errors)) {
+            $message .= ' ' . count($errors) . ' avertissement(s).';
+        }
+
         return new JSONResponse([
-            'success' => empty($errors),
+            // Succès tant qu'aucune suppression DB n'a réellement échoué.
+            // Les groupes LDAP ignorés sont attendus et ne constituent pas un échec.
+            'success' => ($deleted > 0 || $skipped === count($errors)),
             'deleted' => $deleted,
             'merged'  => $merged,
+            'skipped' => $skipped,
             'errors'  => $errors,
-            'message' => "{$deleted} groupe(s) supprimé(s), {$merged} membre(s) fusionné(s)."
-                . (empty($errors) ? '' : ' ' . count($errors) . ' erreur(s).'),
+            'message' => $message,
         ]);
     }
 
@@ -414,12 +437,21 @@ class AdminController extends Controller {
                 'gid'         => $group->getGID(),
                 'displayName' => $name,
                 'members'     => count($group->getUsers()),
+                'ldap'        => $this->isLdapBackedGroup($group),
             ];
         }
 
         $duplicates = [];
         foreach ($byName as $name => $groups) {
             if (count($groups) > 1) {
+                // Ordonner pour que le survivant (groupe conservé) soit en première position :
+                // 1) un groupe LDAP est privilégié (autoritaire, non supprimable) ;
+                // 2) sinon le plus de membres ; 3) sinon ordre alphabétique du GID.
+                usort($groups, fn($a, $b) =>
+                    ($b['ldap'] <=> $a['ldap'])
+                    ?: ($b['members'] <=> $a['members'])
+                    ?: strcmp($a['gid'], $b['gid'])
+                );
                 $duplicates[] = [
                     'displayName' => $name,
                     'groups'      => $groups,
@@ -430,6 +462,20 @@ class AdminController extends Controller {
 
         usort($duplicates, fn($a, $b) => strcmp($a['displayName'], $b['displayName']));
         return $duplicates;
+    }
+
+    /**
+     * Indique si un groupe est fourni par le backend LDAP (user_ldap).
+     * Un tel groupe ne peut pas être supprimé depuis Nextcloud : son appartenance
+     * est pilotée par l'Active Directory.
+     */
+    private function isLdapBackedGroup(\OCP\IGroup $group): bool {
+        foreach ($group->getBackendNames() as $backend) {
+            if (stripos($backend, 'ldap') !== false) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private function getDefault(string $key): string {

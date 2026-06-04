@@ -607,13 +607,16 @@
 
             // Afficher le tableau des doublons
             const rows = res.duplicates.map(d => {
-                const groupRows = d.groups.map((g, i) => `
+                const groupRows = d.groups.map((g, i) => {
+                    const ldapBadge = g.ldap ? ' <span class="synoldap-badge-ldap">LDAP</span>' : '';
+                    return `
                     <tr class="${i === 0 ? 'dup-keep' : 'dup-delete'}">
-                        <td>${i === 0 ? '✓ Garder' : '✗ Supprimer'}</td>
-                        <td><strong>${esc(g.displayName)}</strong></td>
+                        <td>${i === 0 ? '✓ Garder' : (g.ldap ? '⚠️ LDAP' : '✗ Supprimer')}</td>
+                        <td><strong>${esc(g.displayName)}</strong>${ldapBadge}</td>
                         <td><code>${esc(g.gid)}</code></td>
                         <td>${g.members} membre(s)</td>
-                    </tr>`).join('');
+                    </tr>`;
+                }).join('');
                 return `<tr class="dup-separator"><td colspan="4"><strong>${esc(d.displayName)}</strong></td></tr>${groupRows}`;
             }).join('');
 
@@ -623,7 +626,10 @@
                     <tbody>${rows}</tbody>
                 </table>
                 <p class="synoldap-desc" style="margin-top:8px">
-                    <strong>${res.to_delete}</strong> groupe(s) seront supprimés. Leurs membres seront fusionnés dans le groupe conservé.
+                    <strong>${res.to_delete}</strong> groupe(s) seront traités. Les membres des doublons
+                    base de données sont fusionnés dans le groupe conservé puis supprimés.
+                    Un doublon <strong>LDAP</strong> ne peut pas être supprimé depuis Nextcloud :
+                    retirez-le côté Active Directory.
                 </p>`;
 
             card.style.display = '';
@@ -649,10 +655,10 @@
             result.textContent = (res.success ? '✓ ' : '⚠️ ') + res.message;
             showLog('Purge groupes : ' + res.message, res.success ? 'success' : 'warning');
             if (res.errors && res.errors.length > 0) {
-                res.errors.forEach(e => showLog('  ✗ ' + e, 'error'));
+                res.errors.forEach(e => showLog('  ⚠️ ' + e, 'warning'));
             }
-            if (res.success && res.deleted > 0) {
-                // Re-analyser pour vérifier qu'il n'y a plus de doublons
+            if (res.success && (res.deleted > 0 || res.skipped > 0)) {
+                // Re-analyser pour vérifier l'état des doublons
                 setTimeout(checkDuplicateGroups, 1500);
             }
         } catch (e) {

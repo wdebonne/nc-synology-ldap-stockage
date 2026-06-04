@@ -9,6 +9,18 @@
     border-top: 2px solid var(--color-border, #ddd);
     padding: 6px 12px;
 }
+.synoldap-badge-ldap {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 0 6px;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 16px;
+    border-radius: 8px;
+    background: #1565c0;
+    color: #fff;
+    vertical-align: middle;
+}
 
 #synoldap-admin {
     max-width: 960px;

@@ -7,6 +7,28 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [3.2.4] — 2026-06-04
+
+### Fix — Purge des groupes dupliqués : collision groupe DB ↔ groupe LDAP
+
+La purge échouait avec « Could not delete existing group … in LDAP backend » et ne
+supprimait rien. Les doublons proviennent d'une collision : `GroupSyncService` créait un
+groupe **base de données** portant le nom AD comme GID (ex. `Informatique`), tandis que
+`user_ldap` mappait le vrai groupe AD avec un GID suffixé (`Informatique_2`). Le groupe
+LDAP ne peut pas être supprimé depuis Nextcloud (appartenance pilotée par l'AD).
+
+- **Cause racine** — `GroupSyncService::resolveNcGroup()` réutilise désormais un groupe
+  existant de même displayName (groupe LDAP mappé inclus) au lieu de créer un doublon DB.
+- Les ajouts/retraits de membres (`addUser`/`removeUser`) sont protégés : ignorés sur un
+  groupe LDAP au lieu de lever une exception.
+- Les montages SMB sont désormais clés sur le **GID réel** du groupe résolu.
+- **Purge robuste** — conserve le groupe LDAP comme survivant, ne supprime que les
+  doublons base de données, fusionne leurs membres, et signale clairement les groupes
+  LDAP non supprimables (à retirer côté Active Directory) sans planter.
+- UI : badge **LDAP** dans le tableau des doublons.
+
+---
+
 ## [3.2.3] — 2026-06-04
 
 ### Ajouté — Purge des groupes dupliqués
