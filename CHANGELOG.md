@@ -7,6 +7,24 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [3.2.11] — 2026-06-04
+
+### Fix — Parseur ACL DSM : casse variable + structure imbriquée DSM 7
+
+Après la correction POST (3.2.10), l'API ne retourne plus 403 mais retourne 0 groupe —
+le parseur ne reconnaissait pas la réponse DSM 7.
+
+Problèmes corrigés dans `getFolderGroups()` :
+- **Casse** : DSM 7 peut retourner `"type":"Group"`, `"tag":"Allow"` avec des majuscules.
+  Toutes les comparaisons sont maintenant en `strtolower()`.
+- **Structure imbriquée** : DSM 7 retourne parfois `data.acl = {"ace": [...], "is_acl_enable": true}`
+  au lieu de `data.acl = [...]` (tableau plat). Le code détecte les deux formats.
+- **Fallback** : essaie aussi `data.acl_list` et `data.items` pour les futures versions DSM.
+- **Champ grantee** : supporte `name` et `grantee` comme nom du principal.
+- **Logs debug** : structure des clés et nombre d'ACE loggés pour faciliter le diagnostic futur.
+
+---
+
 ## [3.2.10] — 2026-06-04
 
 ### Fix — SYNO.Core.ACL 403 : POST obligatoire pour les API Core

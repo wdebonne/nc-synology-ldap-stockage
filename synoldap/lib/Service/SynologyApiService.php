@@ -268,7 +268,11 @@ class SynologyApiService {
     /**
      * Retourne la liste des groupes ayant une ACE d'autorisation sur un dossier.
      *
-     * Compatible DSM 6 (type='group', is_deny) et DSM 7 (tag='group', type='allow'/'deny').
+     * Gère les variantes de réponse DSM :
+     *  • DSM 6   : data.acl[] avec type='group'|'user', is_deny=bool
+     *  • DSM 7a  : data.acl[] avec tag='Group'|'User',  type='Allow'|'Deny'  (casse variable)
+     *  • DSM 7b  : data.acl.ace[] (ACL imbriquée dans un objet)
+     *  • DSM 7c  : data.acl avec is_acl_enable + ace[] ou items[]
      *
      * @return list<string>
      */
@@ -281,27 +285,54 @@ class SynologyApiService {
             return [];
         }
 
+        // Normaliser : trouver le tableau d'ACE quelle que soit la structure DSM
+        $rawAcl = $aclRes['data']['acl'] ?? [];
+        $aces   = [];
+
+        if (is_array($rawAcl) && array_is_list($rawAcl)) {
+            // Format flat : data.acl = [ {...ace...}, ... ]
+            $aces = $rawAcl;
+        } elseif (is_array($rawAcl)) {
+            // Format nested : data.acl = { "ace": [...], "is_acl_enable": true, ... }
+            $aces = $rawAcl['ace']   ?? $rawAcl['items']  ?? [];
+        }
+
+        // Fallback : data.acl_list ou data.items directement
+        if (empty($aces)) {
+            $aces = $aclRes['data']['acl_list'] ?? $aclRes['data']['items'] ?? [];
+        }
+
+        $this->logger->debug("[SynoLDAP] getFolderGroups '{$realPath}' — structure ACL brute : " . json_encode(array_keys($aclRes['data'] ?? [])) . ", " . count($aces) . " ACE(s)");
+
         $groups = [];
-        foreach ($aclRes['data']['acl'] ?? [] as $ace) {
-            $name = trim($ace['name'] ?? '');
+        foreach ($aces as $ace) {
+            if (!is_array($ace)) {
+                continue;
+            }
+
+            $name = trim($ace['name'] ?? $ace['grantee'] ?? '');
             if ($name === '') {
                 continue;
             }
 
-            // DSM 6 : $ace['type'] = 'group' | 'user', $ace['is_deny'] = bool
-            // DSM 7 : $ace['tag']  = 'group' | 'user', $ace['type'] = 'allow' | 'deny'
-            $isGroup = ($ace['type'] ?? '') === 'group'
-                    || ($ace['tag']  ?? '') === 'group';
+            // Comparer en minuscules pour neutraliser la casse (Group/group/GROUP)
+            $typeLc = strtolower($ace['type'] ?? '');
+            $tagLc  = strtolower($ace['tag']  ?? '');
 
-            $isDeny  = !empty($ace['is_deny'])
-                    || ($ace['type'] ?? '') === 'deny';
+            // Identifier les ACE de groupe
+            $isGroup = $typeLc === 'group' || $tagLc === 'group';
+
+            // Identifier les ACE de refus
+            $isDeny = !empty($ace['is_deny'])
+                   || $typeLc === 'deny'
+                   || ($ace['allow'] ?? true) === false;
 
             if ($isGroup && !$isDeny) {
                 $groups[] = $name;
             }
         }
 
-        $this->logger->debug("[SynoLDAP] getFolderGroups '{$realPath}' → " . implode(', ', $groups) . " (" . count($aclRes['data']['acl'] ?? []) . " ACE(s) bruts)");
+        $this->logger->debug("[SynoLDAP] getFolderGroups '{$realPath}' → groupes : " . implode(', ', $groups));
 
         return $groups;
     }
