@@ -77,12 +77,16 @@ class SynologyApiService {
         ];
 
         if ($isCoreApi && $sid !== null) {
-            // SYNO.Core.* : requestFormat=JSON → POST avec corps JSON
-            // SynoToken obligatoire dans le corps JSON + en-tête + cookie.
-            $jsonBody = $allParams;
+            // SYNO.Core.* — requestFormat=JSON :
+            //   URL  : ?api=..&version=..&method=..  (paramètres de routage)
+            //   Body : JSON avec uniquement les paramètres métier + SynoToken
+            //   Cookie + header X-SYNO-TOKEN obligatoires
+            $routeParams = ['api' => $api, 'version' => $version, 'method' => $method];
+            $jsonBody = $params; // paramètres spécifiques à la méthode (ex. path)
             if ($this->synoToken !== null) {
                 $jsonBody['SynoToken'] = $this->synoToken;
             }
+            $opts[CURLOPT_URL]        = $url . '?' . http_build_query($routeParams);
             $opts[CURLOPT_POST]       = true;
             $opts[CURLOPT_POSTFIELDS] = json_encode($jsonBody);
             $opts[CURLOPT_COOKIE]     = 'id=' . $sid;

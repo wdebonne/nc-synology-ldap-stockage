@@ -7,6 +7,18 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [3.2.14] — 2026-06-04
+
+### Fix — SYNO.Core.ACL code 101 : structure requête JSON
+
+Pour `requestFormat=JSON`, Synology attend :
+- **URL** : `?api=..&version=..&method=..` (paramètres de routage)
+- **Body JSON** : uniquement les paramètres métier (`{"path":"/volume1/...", "SynoToken":"..."}`)
+
+Les versions précédentes mettaient TOUT dans le JSON body → 101 (paramètre invalide).
+
+---
+
 ## [3.2.13] — 2026-06-04
 
 ### Fix — SYNO.Core.ACL : retour à version 1 (v2 → code 101)
