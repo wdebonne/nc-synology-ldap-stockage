@@ -7,6 +7,21 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [3.2.12] — 2026-06-04
+
+### Fix — SYNO.Core.ACL 403 : requestFormat JSON obligatoire
+
+`SYNO.API.Info` révèle `"requestFormat": "JSON"` pour SYNO.Core.ACL — l'API exige
+`Content-Type: application/json` avec un corps JSON, pas `application/x-www-form-urlencoded`.
+
+Toutes les versions précédentes envoyaient un corps form-encoded → DSM répondait 403.
+
+- Corps de la requête POST : `json_encode($params)` au lieu de `http_build_query($params)`
+- En-tête : `Content-Type: application/json` au lieu de `...urlencoded`
+- Version de l'API : 1 → **2** (maxVersion déclaré dans SYNO.API.Info)
+
+---
+
 ## [3.2.11] — 2026-06-04
 
 ### Fix — Parseur ACL DSM : casse variable + structure imbriquée DSM 7

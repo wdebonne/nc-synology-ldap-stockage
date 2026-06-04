@@ -77,15 +77,16 @@ class SynologyApiService {
         ];
 
         if ($isCoreApi && $sid !== null) {
-            // SYNO.Core.* : POST + SynoToken dans le corps + cookie + en-tête
-            $postFields = $allParams;
+            // SYNO.Core.* : requestFormat=JSON → POST avec corps JSON
+            // SynoToken obligatoire dans le corps JSON + en-tête + cookie.
+            $jsonBody = $allParams;
             if ($this->synoToken !== null) {
-                $postFields['SynoToken'] = $this->synoToken;
+                $jsonBody['SynoToken'] = $this->synoToken;
             }
             $opts[CURLOPT_POST]       = true;
-            $opts[CURLOPT_POSTFIELDS] = http_build_query($postFields);
+            $opts[CURLOPT_POSTFIELDS] = json_encode($jsonBody);
             $opts[CURLOPT_COOKIE]     = 'id=' . $sid;
-            $headers = ['Content-Type: application/x-www-form-urlencoded'];
+            $headers = ['Content-Type: application/json'];
             if ($this->synoToken !== null) {
                 $headers[] = 'X-SYNO-TOKEN: ' . $this->synoToken;
             }
@@ -277,7 +278,8 @@ class SynologyApiService {
      * @return list<string>
      */
     private function getFolderGroups(string $realPath, string $sid): array {
-        $aclRes = $this->apiGet('SYNO.Core.ACL', 1, 'get', ['path' => $realPath], $sid);
+        // Version 2 (maxVersion selon SYNO.API.Info) + requestFormat JSON
+        $aclRes = $this->apiGet('SYNO.Core.ACL', 2, 'get', ['path' => $realPath], $sid);
 
         if (empty($aclRes['success'])) {
             $code = $aclRes['error']['code'] ?? '?';
@@ -369,7 +371,8 @@ class SynologyApiService {
                     'acl_raw'   => null,
                 ];
                 if ($realPath) {
-                    $aclRes = $this->apiGet('SYNO.Core.ACL', 1, 'get', ['path' => $realPath], $sid);
+                    // Version 2 (maxVersion selon SYNO.API.Info) + requestFormat JSON
+        $aclRes = $this->apiGet('SYNO.Core.ACL', 2, 'get', ['path' => $realPath], $sid);
                     $entry['acl_raw'] = $aclRes;
                 }
                 $result['folders'][] = $entry;
