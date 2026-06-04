@@ -209,8 +209,19 @@ class AdminController extends Controller {
             $auth    = new \Icewind\SMB\BasicAuth($user, $domain, $pass);
             $factory = new \Icewind\SMB\ServerFactory();
             $server  = $factory->createServer($host, $auth);
-            $shares  = $server->listShares();
-            $names   = array_filter(
+
+            try {
+                $shares = $server->listShares();
+            } catch (\Icewind\SMB\Exception\ForbiddenException $e) {
+                // L'authentification a réussi (sinon AuthenticationException) mais le
+                // compte n'a pas le droit d'énumérer la liste des partages — ce qui est
+                // le comportement par défaut d'un utilisateur SMB non-admin sur Synology.
+                // On valide alors l'accès en se connectant directement aux partages
+                // configurés dans les correspondances de groupes.
+                return $this->testSmbDirectShares($server, $host);
+            }
+
+            $names = array_filter(
                 array_map(fn($s) => $s->getName(), $shares),
                 fn($n) => !str_starts_with($n, 'IPC') && !str_ends_with($n, '$')
             );
@@ -220,12 +231,78 @@ class AdminController extends Controller {
                 'message' => "Connexion SMB réussie — {$count} partage(s) visible(s) : " . implode(', ', array_values($names)),
                 'shares'  => array_values($names),
             ]);
+        } catch (\Icewind\SMB\Exception\AuthenticationException $e) {
+            return new JSONResponse([
+                'success' => false,
+                'message' => "Authentification SMB échouée : identifiants invalides (utilisateur ou mot de passe incorrect).",
+            ]);
         } catch (\Throwable $e) {
             return new JSONResponse([
                 'success' => false,
                 'message' => "Authentification SMB échouée : " . $e->getMessage(),
             ]);
         }
+    }
+
+    /**
+     * Validation de repli : le compte SMB ne peut pas énumérer les partages
+     * (ForbiddenException) mais l'authentification a réussi. On vérifie l'accès
+     * réel en ouvrant directement les partages configurés dans les correspondances.
+     */
+    private function testSmbDirectShares(\Icewind\SMB\IServer $server, string $host): JSONResponse {
+        $mappings = json_decode(
+            $this->config->getAppValue(self::APP_ID, 'group_mappings', '[]'),
+            true
+        ) ?? [];
+
+        $candidates = [];
+        foreach ($mappings as $m) {
+            $share = trim($m['storage_share'] ?? '');
+            if ($share !== '') {
+                $candidates[$share] = true;
+            }
+        }
+        $candidates = array_keys($candidates);
+
+        if (empty($candidates)) {
+            return new JSONResponse([
+                'success' => true,
+                'message' => "Authentification SMB réussie sur {$host}. "
+                    . "L'énumération des partages est refusée par le Synology (utilisateur SMB non-admin), "
+                    . "ce qui est normal : configurez les correspondances de groupes pour vérifier l'accès aux partages.",
+            ]);
+        }
+
+        $accessible = [];
+        $denied     = [];
+        foreach ($candidates as $share) {
+            try {
+                $server->getShare($share)->dir('');
+                $accessible[] = $share;
+            } catch (\Throwable $e) {
+                $denied[] = $share;
+            }
+        }
+
+        if (!empty($accessible)) {
+            $msg = "Connexion SMB réussie — accès vérifié sur " . count($accessible)
+                . " partage(s) : " . implode(', ', $accessible)
+                . ". (L'énumération globale des partages est refusée par le Synology, ce qui est normal pour un compte non-admin.)";
+            if (!empty($denied)) {
+                $msg .= " Partage(s) inaccessible(s) : " . implode(', ', $denied) . ".";
+            }
+            return new JSONResponse([
+                'success' => true,
+                'message' => $msg,
+                'shares'  => $accessible,
+            ]);
+        }
+
+        return new JSONResponse([
+            'success' => false,
+            'message' => "Authentification SMB réussie mais aucun des partages configurés n'est accessible ("
+                . implode(', ', $denied) . "). Vérifiez les permissions du compte SMB sur ces partages côté Synology.",
+        ]);
     }
 
     /**

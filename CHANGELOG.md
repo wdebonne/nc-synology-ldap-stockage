@@ -7,6 +7,25 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [3.2.5] — 2026-06-04
+
+### Fix — Test SMB : « ForbiddenException » avec des identifiants valides
+
+Le test de connexion SMB échouait avec « Authentification SMB échouée : Invalid request
+for smb://… (ForbiddenException) » alors que le compte et le mot de passe étaient corrects.
+
+- **Cause racine** — `testSmb()` validait la connexion via `listShares()`, qui énumère
+  *toutes* les partages du serveur. Sur Synology, un utilisateur SMB **non-admin** n'a pas
+  le droit d'énumérer la liste globale des partages (refus `ForbiddenException`), même s'il
+  peut accéder normalement aux partages sur lesquels il a des permissions.
+- Le test distingue désormais `AuthenticationException` (vrais identifiants invalides) de
+  `ForbiddenException` (login réussi mais énumération refusée).
+- En cas de `ForbiddenException`, repli automatique : ouverture directe des partages
+  configurés dans les correspondances de groupes (`storage_share`) pour confirmer l'accès,
+  avec un message clair indiquant que le refus d'énumération est normal pour un compte non-admin.
+
+---
+
 ## [3.2.4] — 2026-06-04
 
 ### Fix — Purge des groupes dupliqués : collision groupe DB ↔ groupe LDAP
