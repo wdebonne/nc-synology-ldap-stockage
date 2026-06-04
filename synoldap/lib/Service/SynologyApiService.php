@@ -335,7 +335,14 @@ class SynologyApiService {
                    || ($ace['allow'] ?? true) === false;
 
             if ($isGroup && !$isDeny) {
-                $groups[] = $name;
+                // Supprimer le préfixe domaine (PAVILLY\Compta → Compta)
+                // pour correspondre aux noms de groupes NC sans préfixe.
+                $shortName = str_contains($name, '\\')
+                    ? substr($name, strrpos($name, '\\') + 1)
+                    : $name;
+                if ($shortName !== '') {
+                    $groups[] = $shortName;
+                }
             }
         }
 
