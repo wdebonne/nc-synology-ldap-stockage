@@ -7,6 +7,23 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [3.2.10] — 2026-06-04
+
+### Fix — SYNO.Core.ACL 403 : POST obligatoire pour les API Core
+
+La v3.2.9 envoyait SynoToken en GET (paramètre URL). Synology **exige un POST** pour
+`SYNO.Core.*` : le SynoToken doit être dans le corps de la requête (`Content-Type:
+application/x-www-form-urlencoded`), pas dans l'URL.
+
+- `apiGet()` détecte automatiquement les API `SYNO.Core.*` et bascule en POST
+- POST body : tous les paramètres + `SynoToken=<token>`
+- En-têtes : `Content-Type: application/x-www-form-urlencoded` + `X-SYNO-TOKEN: <token>`
+- Cookie : `id=<sid>` (inchangé)
+- API standard (`SYNO.FileStation.*`, `SYNO.API.Auth`) : GET inchangé
+- Login : gère les deux casses du retour DSM (`synotoken` ET `SynoToken`)
+
+---
+
 ## [3.2.9] — 2026-06-04
 
 ### Fix — ACL DSM : erreur 403 sur `SYNO.Core.ACL` (lecture des droits impossible)

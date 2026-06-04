@@ -44,26 +44,30 @@ class SynologyApiService {
     // ─── HTTP ─────────────────────────────────────────────────────────────────
 
     /**
-     * Appel générique à l'API Synology DSM (GET).
+     * Appel générique à l'API Synology DSM.
+     *
+     * SYNO.Core.* : exigent un POST avec SynoToken dans le corps, le SID en cookie
+     * et X-SYNO-TOKEN en en-tête. Les API standard (SYNO.FileStation.*, SYNO.API.Auth)
+     * fonctionnent en GET avec _sid en paramètre.
      */
     private function apiGet(string $api, int $version, string $method, array $params = [], ?string $sid = null): array {
-        $base = $this->getApiBase();
-        $query = array_merge(['api' => $api, 'version' => $version, 'method' => $method], $params);
-        if ($sid !== null) {
-            $query['_sid'] = $sid;
-            // Les API privilégiées (SYNO.Core.*) exigent le SynoToken (CSRF).
-            if ($this->synoToken !== null) {
-                $query['SynoToken'] = $this->synoToken;
-            }
+        $base      = $this->getApiBase();
+        $isCoreApi = str_starts_with($api, 'SYNO.Core.');
+
+        $baseParams = ['api' => $api, 'version' => $version, 'method' => $method];
+        if ($sid !== null && !$isCoreApi) {
+            $baseParams['_sid'] = $sid;
         }
-        $url = $base . '/entry.cgi?' . http_build_query($query);
+        $allParams = array_merge($baseParams, $params);
 
         if (!function_exists('curl_init')) {
             throw new \RuntimeException("L'extension PHP curl est requise mais non disponible");
         }
 
-        $ch = curl_init($url);
+        $url  = $base . '/entry.cgi';
+        $ch   = curl_init();
         $opts = [
+            CURLOPT_URL            => $isCoreApi ? $url : ($url . '?' . http_build_query($allParams)),
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT        => 10,
             CURLOPT_CONNECTTIMEOUT => 5,
@@ -71,14 +75,29 @@ class SynologyApiService {
             CURLOPT_SSL_VERIFYHOST => 0,
             CURLOPT_FOLLOWLOCATION => false,
         ];
-        // Le SID est aussi transmis en cookie « id » : indispensable pour les
-        // API privilégiées SYNO.Core.* qui ignorent le _sid en paramètre GET.
-        if ($sid !== null) {
+
+        if ($isCoreApi && $sid !== null) {
+            // SYNO.Core.* : POST + SynoToken dans le corps + cookie + en-tête
+            $postFields = $allParams;
+            if ($this->synoToken !== null) {
+                $postFields['SynoToken'] = $this->synoToken;
+            }
+            $opts[CURLOPT_POST]       = true;
+            $opts[CURLOPT_POSTFIELDS] = http_build_query($postFields);
+            $opts[CURLOPT_COOKIE]     = 'id=' . $sid;
+            $headers = ['Content-Type: application/x-www-form-urlencoded'];
+            if ($this->synoToken !== null) {
+                $headers[] = 'X-SYNO-TOKEN: ' . $this->synoToken;
+            }
+            $opts[CURLOPT_HTTPHEADER] = $headers;
+        } elseif ($sid !== null) {
+            // API standard : cookie + en-tête en bonus pour compatibilité
             $opts[CURLOPT_COOKIE] = 'id=' . $sid;
             if ($this->synoToken !== null) {
                 $opts[CURLOPT_HTTPHEADER] = ['X-SYNO-TOKEN: ' . $this->synoToken];
             }
         }
+
         curl_setopt_array($ch, $opts);
 
         $raw    = curl_exec($ch);
@@ -129,7 +148,11 @@ class SynologyApiService {
         }
 
         // Mémoriser le SynoToken pour les appels privilégiés (SYNO.Core.*).
-        $this->synoToken = $res['data']['synotoken'] ?? null;
+        // DSM peut retourner le jeton sous 'synotoken' (lowercase) ou 'SynoToken'.
+        $this->synoToken = $res['data']['synotoken'] ?? $res['data']['SynoToken'] ?? null;
+        if ($this->synoToken === null) {
+            $this->logger->warning('[SynoLDAP] SynoToken absent de la réponse login — les API SYNO.Core.* pourraient retourner 403');
+        }
 
         return $res['data']['sid'];
     }
