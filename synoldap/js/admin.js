@@ -406,7 +406,8 @@
         result.textContent = '';
 
         try {
-            const res = await apiFetch('/admin/test-smb', 'POST', {});
+            const share = (document.getElementById('smb-test-share')?.value || '').trim();
+            const res = await apiFetch('/admin/test-smb', 'POST', { share });
             result.className = 'synoldap-inline-result ' + (res.success ? 'synoldap-ok' : 'synoldap-err');
             result.textContent = (res.success ? '✓ ' : '✗ ') + res.message;
             showLog('Test SMB : ' + res.message, res.success ? 'success' : 'error');

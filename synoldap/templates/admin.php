@@ -141,11 +141,19 @@ style('synoldap', 'admin');
             </div>
 
             <div class="synoldap-actions">
+                <input type="text" id="smb-test-share"
+                       placeholder="Partage à tester (ex. NextCloud)"
+                       style="max-width:240px" />
                 <button id="btn-test-smb" class="synoldap-btn synoldap-btn-secondary">
                     🖥️ Tester la connexion SMB
                 </button>
                 <span id="smb-test-result" class="synoldap-inline-result"></span>
             </div>
+            <p class="synoldap-hint" style="margin-top:4px">
+                Laissez le champ vide pour vérifier les partages déjà déclarés dans les
+                correspondances de groupes ci-dessous, ou saisissez un nom de partage pour
+                tester directement son accès.
+            </p>
 
             <hr class="synoldap-separator" />
             <p class="synoldap-section-label">

@@ -23,6 +23,9 @@ for smb://… (ForbiddenException) » alors que le compte et le mot de passe ét
 - En cas de `ForbiddenException`, repli automatique : ouverture directe des partages
   configurés dans les correspondances de groupes (`storage_share`) pour confirmer l'accès,
   avec un message clair indiquant que le refus d'énumération est normal pour un compte non-admin.
+- **Champ de test direct** — un champ « Partage à tester » a été ajouté à côté du bouton de
+  test SMB : saisir un nom de partage (ex. `NextCloud`) vérifie directement son accès, sans
+  dépendre des correspondances de groupes. Champ vide = test des partages déjà déclarés.
 
 ---
 

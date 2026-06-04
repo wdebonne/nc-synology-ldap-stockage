@@ -179,6 +179,7 @@ class AdminController extends Controller {
         $user   = $this->config->getAppValue(self::APP_ID, 'synology_smb_user', '');
         $pass   = $this->config->getAppValue(self::APP_ID, 'synology_smb_password', '');
         $domain = $this->config->getAppValue(self::APP_ID, 'synology_smb_domain', 'WORKGROUP');
+        $share  = trim($this->request->getParam('share', ''));
 
         if (empty($host)) {
             return new JSONResponse(['success' => false, 'message' => 'Hôte Synology non configuré.']);
@@ -217,8 +218,8 @@ class AdminController extends Controller {
                 // compte n'a pas le droit d'énumérer la liste des partages — ce qui est
                 // le comportement par défaut d'un utilisateur SMB non-admin sur Synology.
                 // On valide alors l'accès en se connectant directement aux partages
-                // configurés dans les correspondances de groupes.
-                return $this->testSmbDirectShares($server, $host);
+                // (celui saisi dans le champ de test, sinon ceux des correspondances).
+                return $this->testSmbDirectShares($server, $host, $share);
             }
 
             $names = array_filter(
@@ -247,29 +248,35 @@ class AdminController extends Controller {
     /**
      * Validation de repli : le compte SMB ne peut pas énumérer les partages
      * (ForbiddenException) mais l'authentification a réussi. On vérifie l'accès
-     * réel en ouvrant directement les partages configurés dans les correspondances.
+     * réel en ouvrant directement le partage saisi, ou à défaut ceux configurés
+     * dans les correspondances de groupes.
      */
-    private function testSmbDirectShares(\Icewind\SMB\IServer $server, string $host): JSONResponse {
-        $mappings = json_decode(
-            $this->config->getAppValue(self::APP_ID, 'group_mappings', '[]'),
-            true
-        ) ?? [];
-
+    private function testSmbDirectShares(\Icewind\SMB\IServer $server, string $host, string $share = ''): JSONResponse {
         $candidates = [];
-        foreach ($mappings as $m) {
-            $share = trim($m['storage_share'] ?? '');
-            if ($share !== '') {
-                $candidates[$share] = true;
+        if ($share !== '') {
+            $candidates[] = $share;
+        } else {
+            $mappings = json_decode(
+                $this->config->getAppValue(self::APP_ID, 'group_mappings', '[]'),
+                true
+            ) ?? [];
+            $seen = [];
+            foreach ($mappings as $m) {
+                $s = trim($m['storage_share'] ?? '');
+                if ($s !== '' && !isset($seen[$s])) {
+                    $seen[$s] = true;
+                    $candidates[] = $s;
+                }
             }
         }
-        $candidates = array_keys($candidates);
 
         if (empty($candidates)) {
             return new JSONResponse([
                 'success' => true,
                 'message' => "Authentification SMB réussie sur {$host}. "
                     . "L'énumération des partages est refusée par le Synology (utilisateur SMB non-admin), "
-                    . "ce qui est normal : configurez les correspondances de groupes pour vérifier l'accès aux partages.",
+                    . "ce qui est normal : saisissez un nom de partage à tester, ou configurez les "
+                    . "correspondances de groupes pour vérifier l'accès aux partages.",
             ]);
         }
 
