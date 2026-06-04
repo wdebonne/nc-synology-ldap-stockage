@@ -127,30 +127,12 @@ class UserLdapBridgeService {
         // ── Activer cette configuration ───────────────────────────────────────
         $this->set($a, $p . 'ldap_configuration_active', '1');
 
-        // ── Enregistrer le préfixe pour que user_ldap le détecte ─────────────
-        // En NC 33, user_ldap cherche d'abord 'configuration_prefixes'.
-        // S'il ne trouve pas, il utilise le fallback (scan des clés _ldap_configuration_active).
-        // On écrit les deux pour maximiser la compatibilité.
-        $this->registerPrefixLegacy();
-    }
-
-    /**
-     * Méthode legacy : écrit le préfixe dans configuration_prefixes (format JSON string).
-     * user_ldap NC 33 lit ce champ via IAppConfig::getValueArray().
-     * En cas de mismatch de type, il utilise le fallback (scan des clés actives) → OK.
-     */
-    private function registerPrefixLegacy(): void {
-        $current = $this->config->getAppValue(self::UL_APP, 'configuration_prefixes', '');
-        if ($current === '' || $current === 'UNFILLED') {
-            // Première config : préfixe vide
-            $this->config->setAppValue(self::UL_APP, 'configuration_prefixes', json_encode(['']));
-        } else {
-            $prefixes = @json_decode($current, true);
-            if (is_array($prefixes) && !in_array(self::UL_PREFIX, $prefixes, true)) {
-                $prefixes[] = self::UL_PREFIX;
-                $this->config->setAppValue(self::UL_APP, 'configuration_prefixes', json_encode($prefixes));
-            }
-        }
+        // NE PAS écrire 'configuration_prefixes' via IConfig (type string) :
+        // en NC 33, user_ldap stocke ce champ comme type=array dans IAppConfig.
+        // L'écriture via IConfig provoquerait "conflict between new type (mixed) and
+        // old type (array)". user_ldap a un fallback : il scanne les clés actives
+        // (ldap_configuration_active) pour détecter les configs → notre config
+        // sera détectée automatiquement sans écrire configuration_prefixes.
     }
 
     private function set(string $app, string $key, string $value): void {
