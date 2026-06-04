@@ -17,6 +17,7 @@ return [
         ['name' => 'admin#getDuplicateGroups',  'url' => '/admin/duplicate-groups',       'verb' => 'GET'],
         ['name' => 'admin#purgeDuplicateGroups','url' => '/admin/purge-duplicate-groups', 'verb' => 'POST'],
         ['name' => 'admin#discoverAcl',     'url' => '/admin/discover-acl',     'verb' => 'GET'],
+        ['name' => 'admin#debugAcl',        'url' => '/admin/debug-acl',        'verb' => 'GET'],
         ['name' => 'admin#clearAclCache',   'url' => '/admin/clear-acl-cache',  'verb' => 'POST'],
     ],
 ];

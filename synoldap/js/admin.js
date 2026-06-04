@@ -533,6 +533,69 @@
         }
     }
 
+    // ─── Debug ACL brut ──────────────────────────────────────────────────────
+
+    async function debugAcl() {
+        const btn = document.getElementById('btn-debug-acl');
+        btn.disabled = true;
+        btn.textContent = '⏳ Diagnostic…';
+
+        const aclRows = [...document.querySelectorAll('#mappings-body tr[data-mode="acl"]')];
+        if (aclRows.length === 0) {
+            showStatus('Aucune ligne en mode "Auto ACL" dans les correspondances.', 'warning');
+            btn.disabled = false;
+            btn.textContent = '🛠️ Diagnostic ACL brut';
+            return;
+        }
+
+        const share = (aclRows[0].querySelector('[data-field="storage_share"]')?.value || '').trim();
+        if (!share) {
+            showStatus('Veuillez saisir un partage racine dans la ligne Auto ACL.', 'warning');
+            btn.disabled = false;
+            btn.textContent = '🛠️ Diagnostic ACL brut';
+            return;
+        }
+
+        showLog('Diagnostic ACL brut sur "' + share + '"…', 'info');
+
+        try {
+            const res = await fetch(apiUrl('/admin/debug-acl') + '?share=' + encodeURIComponent(share), {
+                headers: csrfHeaders(),
+            });
+            const data = await res.json();
+
+            const card    = document.getElementById('acl-preview-card');
+            const content = document.getElementById('acl-preview-content');
+            card.style.display = '';
+
+            if (!data.success) {
+                content.innerHTML = '<p class="synoldap-desc" style="color:red">Erreur : ' + esc(data.message) + '</p>';
+                showLog('Erreur diagnostic : ' + data.message, 'error');
+            } else {
+                const debug = data.debug || {};
+                let html = '<p class="synoldap-desc">Diagnostic brut DSM pour <strong>' + esc(share) + '</strong></p>';
+                html += '<p>Listage OK : ' + (debug.list_success ? '✅' : '❌') + '</p>';
+                if (debug.list_error) {
+                    html += '<p style="color:red">Erreur listage : <code>' + esc(JSON.stringify(debug.list_error)) + '</code></p>';
+                }
+                (debug.folders || []).forEach(f => {
+                    html += '<details style="margin:8px 0"><summary><strong>' + esc(f.name) + '</strong> — real_path: <code>' + esc(f.real_path || '(absent)') + '</code></summary>';
+                    html += '<pre style="font-size:11px;overflow:auto;max-height:200px;background:#f5f5f5;padding:8px">' + esc(JSON.stringify(f.acl_raw, null, 2)) + '</pre>';
+                    html += '</details>';
+                });
+                content.innerHTML = html;
+                showLog('Diagnostic ACL brut affiché pour "' + share + '"', 'info');
+            }
+
+            card.scrollIntoView({ behavior: 'smooth' });
+        } catch (e) {
+            showStatus('Erreur diagnostic : ' + e.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '🛠️ Diagnostic ACL brut';
+        }
+    }
+
     // ─── Sync all users ──────────────────────────────────────────────────────
 
     async function syncAll() {
@@ -566,13 +629,28 @@
 
         try {
             const res = await apiFetch('/admin/apply-storage', 'POST', {});
-            (res.results || []).forEach(r => {
-                showLog((r.status === 'ok' ? '✓ ' : '✗ ') + (r.message || r.group),
-                         r.status === 'ok' ? 'success' : 'error');
+            const results = res.results || [];
+
+            if (results.length === 0) {
+                showLog('⚠️ Aucun montage à appliquer — vérifiez que des correspondances de groupes sont configurées et sauvegardées ci-dessous.', 'warning');
+                showStatus('Aucun montage à appliquer.', 'warning');
+                return;
+            }
+
+            results.forEach(r => {
+                const icon = r.status === 'ok' ? '✓' : r.status === 'warning' ? '⚠️' : '✗';
+                const type = r.status === 'ok' ? 'success' : r.status === 'warning' ? 'warning' : 'error';
+                showLog(icon + ' ' + (r.message || r.group), type);
             });
-            const hasErr = (res.results || []).some(r => r.status === 'error');
-            showStatus(hasErr ? 'Montages appliqués avec des erreurs.' : 'Montages appliqués !',
-                       hasErr ? 'warning' : 'success');
+
+            const hasErr  = results.some(r => r.status === 'error');
+            const hasWarn = results.some(r => r.status === 'warning');
+            showStatus(
+                hasErr  ? 'Montages appliqués avec des erreurs.' :
+                hasWarn ? 'Montages appliqués avec des avertissements.' :
+                          `Montages appliqués ! (${results.length} traité(s))`,
+                hasErr ? 'error' : hasWarn ? 'warning' : 'success'
+            );
         } catch (e) {
             showStatus('Erreur : ' + e.message, 'error');
         } finally {
@@ -685,6 +763,7 @@
         document.getElementById('btn-sync-all').addEventListener('click', syncAll);
         document.getElementById('btn-apply-storage').addEventListener('click', applyStorage);
         document.getElementById('btn-preview-acl').addEventListener('click', previewAcl);
+        document.getElementById('btn-debug-acl').addEventListener('click', debugAcl);
         document.getElementById('btn-clear-acl-cache').addEventListener('click', clearAclCache);
 
         document.getElementById('btn-add-mapping').addEventListener('click', () => {

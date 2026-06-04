@@ -219,7 +219,9 @@ class SynologyApiService {
     }
 
     /**
-     * Retourne la liste des groupes AD ayant accès en lecture (non-deny) sur un dossier.
+     * Retourne la liste des groupes ayant une ACE d'autorisation sur un dossier.
+     *
+     * Compatible DSM 6 (type='group', is_deny) et DSM 7 (tag='group', type='allow'/'deny').
      *
      * @return list<string>
      */
@@ -234,16 +236,69 @@ class SynologyApiService {
 
         $groups = [];
         foreach ($aclRes['data']['acl'] ?? [] as $ace) {
-            if (
-                ($ace['type'] ?? '') === 'group' &&
-                !empty($ace['right']['read']) &&
-                empty($ace['is_deny']) &&
-                !empty($ace['name'])
-            ) {
-                $groups[] = $ace['name'];
+            $name = trim($ace['name'] ?? '');
+            if ($name === '') {
+                continue;
+            }
+
+            // DSM 6 : $ace['type'] = 'group' | 'user', $ace['is_deny'] = bool
+            // DSM 7 : $ace['tag']  = 'group' | 'user', $ace['type'] = 'allow' | 'deny'
+            $isGroup = ($ace['type'] ?? '') === 'group'
+                    || ($ace['tag']  ?? '') === 'group';
+
+            $isDeny  = !empty($ace['is_deny'])
+                    || ($ace['type'] ?? '') === 'deny';
+
+            if ($isGroup && !$isDeny) {
+                $groups[] = $name;
             }
         }
 
+        $this->logger->debug("[SynoLDAP] getFolderGroups '{$realPath}' → " . implode(', ', $groups) . " (" . count($aclRes['data']['acl'] ?? []) . " ACE(s) bruts)");
+
         return $groups;
     }
-}
+
+    /**
+     * Retourne les données brutes ACL DSM pour un dossier — utilisé par le diagnostic admin.
+     */
+    public function getRawAcl(string $shareName): array {
+        $sid = $this->login();
+        try {
+            // 1. Lister les sous-dossiers
+            $listRes = $this->apiGet('SYNO.FileStation.List', 2, 'list', [
+                'folder_path' => '/' . ltrim($shareName, '/'),
+                'additional'  => json_encode(['real_path', 'perm']),
+                'filetype'    => 'dir',
+            ], $sid);
+
+            $files = $listRes['data']['files'] ?? [];
+            $result = [
+                'list_success' => $listRes['success'] ?? false,
+                'list_error'   => $listRes['error'] ?? null,
+                'folders'      => [],
+            ];
+
+            // 2. Pour chaque sous-dossier, récupérer les ACL brutes
+            foreach (array_slice($files, 0, 5) as $item) {
+                if (empty($item['isdir'])) {
+                    continue;
+                }
+                $realPath = $item['additional']['real_path'] ?? null;
+                $entry = [
+                    'name'      => $item['name'],
+                    'real_path' => $realPath,
+                    'acl_raw'   => null,
+                ];
+                if ($realPath) {
+                    $aclRes = $this->apiGet('SYNO.Core.ACL', 1, 'get', ['path' => $realPath], $sid);
+                    $entry['acl_raw'] = $aclRes;
+                }
+                $result['folders'][] = $entry;
+            }
+
+            return $result;
+        } finally {
+            $this->logout($sid);
+        }
+    }

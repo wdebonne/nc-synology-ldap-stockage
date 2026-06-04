@@ -142,7 +142,7 @@ style('synoldap', 'admin');
 
             <div class="synoldap-actions">
                 <input type="text" id="smb-test-share"
-                       placeholder="Partage à tester (ex. NextCloud)"
+                       placeholder="Partage ou chemin (ex. NextCloud/Compta)"
                        style="max-width:240px" />
                 <button id="btn-test-smb" class="synoldap-btn synoldap-btn-secondary">
                     🖥️ Tester la connexion SMB
@@ -151,8 +151,10 @@ style('synoldap', 'admin');
             </div>
             <p class="synoldap-hint" style="margin-top:4px">
                 Laissez le champ vide pour vérifier les partages déjà déclarés dans les
-                correspondances de groupes ci-dessous, ou saisissez un nom de partage pour
-                tester directement son accès.
+                correspondances de groupes ci-dessous, ou saisissez un partage
+                (« NextCloud ») voire un sous-dossier (« NextCloud/Compta ») pour tester
+                directement son accès. ⚠️ « Compta » seul n'est pas un partage mais un
+                sous-dossier de « NextCloud ».
             </p>
 
             <hr class="synoldap-separator" />
@@ -305,6 +307,9 @@ style('synoldap', 'admin');
             </button>
             <button id="btn-preview-acl" class="synoldap-btn synoldap-btn-secondary">
                 🔍 Prévisualiser les ACL
+            </button>
+            <button id="btn-debug-acl" class="synoldap-btn synoldap-btn-ghost" title="Affiche la réponse brute de l'API DSM pour diagnostic">
+                🛠️ Diagnostic ACL brut
             </button>
             <button id="btn-sync-all" class="synoldap-btn synoldap-btn-warning">
                 🔄 Synchroniser tous les utilisateurs maintenant

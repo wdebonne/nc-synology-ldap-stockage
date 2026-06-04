@@ -250,11 +250,17 @@ class AdminController extends Controller {
      * (ForbiddenException) mais l'authentification a réussi. On vérifie l'accès
      * réel en ouvrant directement le partage saisi, ou à défaut ceux configurés
      * dans les correspondances de groupes.
+     *
+     * Le champ de saisie accepte un partage ("NextCloud") ou un chemin
+     * "Partage/Sous-dossier" ("NextCloud/Compta"). Côté SMB, seul le premier
+     * segment est un partage réel ; le reste est un chemin listé via dir().
      */
-    private function testSmbDirectShares(\Icewind\SMB\IServer $server, string $host, string $share = ''): JSONResponse {
+    private function testSmbDirectShares(\Icewind\SMB\IServer $server, string $host, string $input = ''): JSONResponse {
+        // Chaque candidat : ['label' => affichage, 'share' => partage, 'path' => sous-chemin]
         $candidates = [];
-        if ($share !== '') {
-            $candidates[] = $share;
+
+        if ($input !== '') {
+            $candidates[] = $this->parseSharePath($input);
         } else {
             $mappings = json_decode(
                 $this->config->getAppValue(self::APP_ID, 'group_mappings', '[]'),
@@ -262,11 +268,21 @@ class AdminController extends Controller {
             ) ?? [];
             $seen = [];
             foreach ($mappings as $m) {
-                $s = trim($m['storage_share'] ?? '');
-                if ($s !== '' && !isset($seen[$s])) {
-                    $seen[$s] = true;
-                    $candidates[] = $s;
+                $share = trim($m['storage_share'] ?? '');
+                if ($share === '') {
+                    continue;
                 }
+                $sub  = trim((string)($m['storage_subfolder'] ?? ''), '/');
+                $key  = $share . '/' . $sub;
+                if (isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+                $candidates[] = [
+                    'label' => $sub !== '' ? "{$share}/{$sub}" : $share,
+                    'share' => $share,
+                    'path'  => $sub,
+                ];
             }
         }
 
@@ -275,28 +291,28 @@ class AdminController extends Controller {
                 'success' => true,
                 'message' => "Authentification SMB réussie sur {$host}. "
                     . "L'énumération des partages est refusée par le Synology (utilisateur SMB non-admin), "
-                    . "ce qui est normal : saisissez un nom de partage à tester, ou configurez les "
-                    . "correspondances de groupes pour vérifier l'accès aux partages.",
+                    . "ce qui est normal : saisissez un partage à tester (ex. « NextCloud » ou "
+                    . "« NextCloud/Compta »), ou configurez les correspondances de groupes.",
             ]);
         }
 
         $accessible = [];
         $denied     = [];
-        foreach ($candidates as $share) {
+        foreach ($candidates as $c) {
             try {
-                $server->getShare($share)->dir('');
-                $accessible[] = $share;
+                $server->getShare($c['share'])->dir($c['path']);
+                $accessible[] = $c['label'];
             } catch (\Throwable $e) {
-                $denied[] = $share;
+                $denied[] = $c['label'] . ' (' . $e->getMessage() . ')';
             }
         }
 
         if (!empty($accessible)) {
             $msg = "Connexion SMB réussie — accès vérifié sur " . count($accessible)
-                . " partage(s) : " . implode(', ', $accessible)
+                . " emplacement(s) : " . implode(', ', $accessible)
                 . ". (L'énumération globale des partages est refusée par le Synology, ce qui est normal pour un compte non-admin.)";
             if (!empty($denied)) {
-                $msg .= " Partage(s) inaccessible(s) : " . implode(', ', $denied) . ".";
+                $msg .= " Inaccessible(s) : " . implode(', ', $denied) . ".";
             }
             return new JSONResponse([
                 'success' => true,
@@ -307,9 +323,28 @@ class AdminController extends Controller {
 
         return new JSONResponse([
             'success' => false,
-            'message' => "Authentification SMB réussie mais aucun des partages configurés n'est accessible ("
-                . implode(', ', $denied) . "). Vérifiez les permissions du compte SMB sur ces partages côté Synology.",
+            'message' => "Authentification SMB réussie mais aucun emplacement n'est accessible : "
+                . implode(', ', $denied)
+                . ". Rappel : « Compta » et « RH » sont des sous-dossiers du partage « NextCloud » — "
+                . "saisissez « NextCloud » ou « NextCloud/Compta », et non « Compta » seul. "
+                . "Vérifiez aussi les permissions du compte SMB côté Synology.",
         ]);
+    }
+
+    /**
+     * Découpe une saisie "Partage/Sous/Dossier" en partage SMB (1er segment)
+     * et sous-chemin (le reste). Retourne ['label', 'share', 'path'].
+     */
+    private function parseSharePath(string $input): array {
+        $input = trim($input, " \t\n\r\0\x0B/");
+        $parts = explode('/', $input, 2);
+        $share = $parts[0];
+        $path  = isset($parts[1]) ? trim($parts[1], '/') : '';
+        return [
+            'label' => $path !== '' ? "{$share}/{$path}" : $share,
+            'share' => $share,
+            'path'  => $path,
+        ];
     }
 
     /**
@@ -330,6 +365,28 @@ class AdminController extends Controller {
         try {
             $mappings = $this->synoApiService->discoverAclMappings($share);
             return new JSONResponse(['success' => true, 'mappings' => $mappings]);
+        } catch (\Throwable $e) {
+            return new JSONResponse(['success' => false, 'message' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Retourne les données ACL brutes DSM pour diagnostic (max 5 sous-dossiers).
+     *
+     * @AdminRequired
+     * @NoCSRFRequired
+     */
+    #[AdminRequired]
+    #[NoCSRFRequired]
+    public function debugAcl(): JSONResponse {
+        $share = trim($this->request->getParam('share', ''));
+        if (empty($share)) {
+            return new JSONResponse(['success' => false, 'message' => 'Paramètre "share" manquant.']);
+        }
+
+        try {
+            $raw = $this->synoApiService->getRawAcl($share);
+            return new JSONResponse(['success' => true, 'debug' => $raw]);
         } catch (\Throwable $e) {
             return new JSONResponse(['success' => false, 'message' => $e->getMessage()]);
         }

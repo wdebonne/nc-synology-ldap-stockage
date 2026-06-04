@@ -24,8 +24,14 @@ for smb://… (ForbiddenException) » alors que le compte et le mot de passe ét
   configurés dans les correspondances de groupes (`storage_share`) pour confirmer l'accès,
   avec un message clair indiquant que le refus d'énumération est normal pour un compte non-admin.
 - **Champ de test direct** — un champ « Partage à tester » a été ajouté à côté du bouton de
-  test SMB : saisir un nom de partage (ex. `NextCloud`) vérifie directement son accès, sans
-  dépendre des correspondances de groupes. Champ vide = test des partages déjà déclarés.
+  test SMB : saisir un partage (« NextCloud ») ou un chemin « Partage/Sous-dossier »
+  (« NextCloud/Compta ») vérifie directement son accès, sans dépendre des correspondances
+  de groupes. Champ vide = test des partages déjà déclarés.
+- **Distinction partage / sous-dossier** — le test interprète désormais correctement le
+  premier segment comme partage SMB réel et le reste comme sous-chemin (listé via `dir()`).
+  Les correspondances de groupes combinent `storage_share` + `storage_subfolder`. Message
+  d'erreur explicite rappelant que « Compta » seul est un sous-dossier de « NextCloud », pas
+  un partage. Les causes d'échec par emplacement sont désormais affichées.
 
 ---
 
