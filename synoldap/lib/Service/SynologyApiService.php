@@ -278,8 +278,9 @@ class SynologyApiService {
      * @return list<string>
      */
     private function getFolderGroups(string $realPath, string $sid): array {
-        // Version 2 (maxVersion selon SYNO.API.Info) + requestFormat JSON
-        $aclRes = $this->apiGet('SYNO.Core.ACL', 2, 'get', ['path' => $realPath], $sid);
+        // v1 (minVersion) avec requestFormat JSON.
+        // v2 retourne code 101 car la méthode 'get' n'y existe plus/a changé.
+        $aclRes = $this->apiGet('SYNO.Core.ACL', 1, 'get', ['path' => $realPath], $sid);
 
         if (empty($aclRes['success'])) {
             $code = $aclRes['error']['code'] ?? '?';
@@ -371,8 +372,9 @@ class SynologyApiService {
                     'acl_raw'   => null,
                 ];
                 if ($realPath) {
-                    // Version 2 (maxVersion selon SYNO.API.Info) + requestFormat JSON
-        $aclRes = $this->apiGet('SYNO.Core.ACL', 2, 'get', ['path' => $realPath], $sid);
+                    // v1 (minVersion) avec requestFormat JSON.
+        // v2 retourne code 101 car la méthode 'get' n'y existe plus/a changé.
+        $aclRes = $this->apiGet('SYNO.Core.ACL', 1, 'get', ['path' => $realPath], $sid);
                     $entry['acl_raw'] = $aclRes;
                 }
                 $result['folders'][] = $entry;

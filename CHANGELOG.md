@@ -7,6 +7,16 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [3.2.13] — 2026-06-04
+
+### Fix — SYNO.Core.ACL : retour à version 1 (v2 → code 101)
+
+SYNO.Core.ACL v2 retournait `{"error":{"code":101},"success":false}` (paramètre invalide)
+car la méthode `get` n'existe plus en v2 ou a changé de nom. Retour à v1 (minVersion)
+qui possède bien la méthode `get` — le format JSON (3.2.12) est conservé.
+
+---
+
 ## [3.2.12] — 2026-06-04
 
 ### Fix — SYNO.Core.ACL 403 : requestFormat JSON obligatoire
