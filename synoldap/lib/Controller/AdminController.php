@@ -7,6 +7,7 @@ use OCA\SynoLDAP\Service\GroupSyncService;
 use OCA\SynoLDAP\Service\LdapService;
 use OCA\SynoLDAP\Service\StorageConfigService;
 use OCA\SynoLDAP\Service\SynologyApiService;
+use OCA\SynoLDAP\Service\UserLdapBridgeService;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http\Attribute\AdminRequired;
 use OCP\AppFramework\Http\Attribute\NoCSRFRequired;
@@ -47,6 +48,7 @@ class AdminController extends Controller {
         private GroupSyncService $groupSyncService,
         private StorageConfigService $storageConfigService,
         private SynologyApiService $synoApiService,
+        private UserLdapBridgeService $userLdapBridge,
     ) {
         parent::__construct(self::APP_ID, $request);
     }
@@ -104,7 +106,46 @@ class AdminController extends Controller {
             $this->config->setAppValue(self::APP_ID, 'group_mappings', json_encode($mappings ?? []));
         }
 
-        return new JSONResponse(['success' => true, 'message' => 'Configuration sauvegardée avec succès.']);
+        // Synchroniser automatiquement user_ldap avec les nouveaux paramètres LDAP.
+        // user_ldap gère l'authentification → cette sync est critique.
+        $synced = $this->userLdapBridge->sync();
+
+        $message = 'Configuration sauvegardée avec succès.';
+        if ($synced) {
+            $message .= ' user_ldap configuré automatiquement.';
+        } elseif (!$this->userLdapBridge->isUserLdapAvailable()) {
+            $message .= ' ⚠️ App user_ldap non disponible — installez-la pour l\'authentification LDAP.';
+        }
+
+        return new JSONResponse(['success' => true, 'message' => $message, 'user_ldap_synced' => $synced]);
+    }
+
+    /**
+     * Retourne le statut de la configuration user_ldap.
+     * @AdminRequired
+     * @NoCSRFRequired
+     */
+    #[AdminRequired]
+    #[NoCSRFRequired]
+    public function getUserLdapStatus(): JSONResponse {
+        return new JSONResponse($this->userLdapBridge->getStatus());
+    }
+
+    /**
+     * Force la synchronisation de la config LDAP vers user_ldap.
+     * @AdminRequired
+     */
+    #[AdminRequired]
+    public function syncUserLdap(): JSONResponse {
+        $synced = $this->userLdapBridge->sync();
+        $status = $this->userLdapBridge->getStatus();
+        return new JSONResponse([
+            'success' => $synced,
+            'message' => $synced
+                ? 'user_ldap configuré avec succès. Rechargez la page pour prendre en compte les changements.'
+                : ('Échec : ' . ($status['message'] ?? 'erreur inconnue')),
+            'status' => $status,
+        ]);
     }
 
     /**

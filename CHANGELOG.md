@@ -7,6 +7,53 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [3.2.0] — 2026-06-04
+
+### Architecture définitive — user_ldap intégré via bridge automatique
+
+#### Constat final
+
+Après 35+ versions de correctifs, les bugs (401 DAV, "Se souvenir de moi", sessions) persitaient
+car ils sont intrinsèques à tout backend custom face aux internals de NC 33 (DAV_AUTHENTICATED,
+session regeneration, dirty table reads). user_ldap n'a jamais ces problèmes car il a été testé
+et mis à jour spécifiquement pour NC 33.
+
+#### Solution : UserLdapBridgeService
+
+**`synoldap/lib/Service/UserLdapBridgeService.php`** — nouveau service qui configure
+user_ldap automatiquement depuis les paramètres LDAP de synoldap :
+
+- Utilise `\OCA\User_LDAP\Configuration::saveConfiguration()` → user_ldap gère
+  le chiffrement du mot de passe (base64), la sérialisation, l'écriture en DB
+- Mappe les propriétés synoldap → user_ldap : host, port, TLS, bind DN/password,
+  base DN utilisateurs et groupes, filtres, attribut UID (sAMAccountName)
+- Enregistre le préfixe dans `configuration_prefixes` (NC 33)
+- Idempotent : `IConfig::setAppValue()` n'écrit en DB que si la valeur a changé
+
+#### Fonctionnement
+
+1. Admin configure les paramètres LDAP dans synoldap (une seule interface)
+2. Lors de **chaque Save**, synoldap synchronise sa config vers user_ldap
+3. Lors de **chaque boot NC**, synoldap vérifie et re-synchronise si besoin
+4. user_ldap se charge de TOUT ce qui touche l'authentification :
+   - `checkPassword()` (remember me, re-validation token)
+   - DAV_AUTHENTICATED (géré nativement)
+   - Sessions NC 33 (éprouvé)
+5. synoldap intercepte `PostLoginEvent` pour `getBackendClassName() === 'LDAP'`
+   et gère la sync des groupes AD → NC + montages SMB
+
+#### Nouveaux endpoints admin
+
+- `GET /admin/user-ldap-status` — état de la synchronisation user_ldap
+- `POST /admin/sync-user-ldap` — force la re-synchronisation
+
+#### Requis
+
+user_ldap doit être installé dans NC (inclus par défaut dans NC AIO).
+synoldap détecte automatiquement sa présence via `class_exists('\OCA\User_LDAP\Configuration')`.
+
+---
+
 ## [3.1.1] — 2026-06-04
 
 ### Ajouté — Interface admin : test SMB + toggles activer/désactiver par section

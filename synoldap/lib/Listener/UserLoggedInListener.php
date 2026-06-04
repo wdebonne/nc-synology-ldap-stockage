@@ -10,13 +10,12 @@ use OCP\User\Events\PostLoginEvent;
 use Psr\Log\LoggerInterface;
 
 /**
- * Synchronise les groupes et montages SMB pour les utilisateurs SynoLDAP.
+ * Synchronise les groupes AD → NC et les montages SMB pour les utilisateurs LDAP.
  *
- * Filtre : getBackendClassName() === 'SynoLDAP'
- * → Les comptes NC natifs (backend 'Database') sont ignorés.
- * → Aucune manipulation de session nécessaire : le mapping oc_synoldap_users
- *   garantit que userExists() ne fait plus d'appels LDAP pour les utilisateurs
- *   connus, ce qui élimine les dirty table reads et les problèmes de session NC 33.
+ * Filtre : getBackendClassName() === 'LDAP'
+ * → user_ldap retourne 'LDAP' depuis User_LDAP::getBackendName()
+ * → Les comptes NC natifs (backend 'Database') sont ignorés
+ * → Plus aucune manipulation de session — user_ldap gère DAV_AUTHENTICATED
  */
 class UserLoggedInListener implements IEventListener {
     public function __construct(
@@ -31,14 +30,15 @@ class UserLoggedInListener implements IEventListener {
 
         $user = $event->getUser();
 
-        if ($user->getBackendClassName() !== 'SynoLDAP') {
+        // Seuls les utilisateurs authentifiés par user_ldap (backend 'LDAP')
+        if ($user->getBackendClassName() !== 'LDAP') {
             return;
         }
 
         try {
             $this->groupSyncService->syncUser($user);
         } catch (\Throwable $e) {
-            $this->logger->error('[SynoLDAP] Échec de la synchronisation pour ' . $user->getUID(), [
+            $this->logger->error('[SynoLDAP] Échec sync pour ' . $user->getUID(), [
                 'exception' => $e,
             ]);
         }
