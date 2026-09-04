@@ -43,7 +43,7 @@ class LdapService {
      * Ouvre et retourne une nouvelle connexion LDAP authentifiée avec le compte de service.
      */
     private function openServiceConnection(): \LDAP\Connection {
-        $host   = $this->config->getAppValue(self::APP_ID, 'ldap_host', '');
+        $host   = $this->normalizeHost($this->config->getAppValue(self::APP_ID, 'ldap_host', ''));
         $port   = (int) $this->config->getAppValue(self::APP_ID, 'ldap_port', '389');
         $useTls = $this->config->getAppValue(self::APP_ID, 'ldap_tls', '0') === '1';
 
@@ -115,7 +115,7 @@ class LdapService {
      * Ouvre une connexion LDAP sans bind (pour tester les credentials utilisateur).
      */
     private function connectRaw(): \LDAP\Connection {
-        $host   = $this->config->getAppValue(self::APP_ID, 'ldap_host', '');
+        $host   = $this->normalizeHost($this->config->getAppValue(self::APP_ID, 'ldap_host', ''));
         $port   = (int) $this->config->getAppValue(self::APP_ID, 'ldap_port', '389');
         $useTls = $this->config->getAppValue(self::APP_ID, 'ldap_tls', '0') === '1';
         $scheme = $useTls ? 'ldaps' : 'ldap';
@@ -142,6 +142,14 @@ class LdapService {
      * Normalise le login en retirant le préfixe domaine Windows (DOMAIN\user → user).
      * Nécessaire car sAMAccountName ne contient pas le préfixe domaine dans l'AD.
      */
+    /**
+     * Le champ hôte attend une IP ou un nom : un schéma collé par habitude
+     * (« ldaps://10.0.0.1 ») donnerait une URI doublée à ldap_connect().
+     */
+    private function normalizeHost(string $host): string {
+        return (string) preg_replace('#^ldaps?://#i', '', trim($host));
+    }
+
     private function stripDomainPrefix(string $login): string {
         $pos = strpos($login, '\\');
         return $pos !== false ? substr($login, $pos + 1) : $login;

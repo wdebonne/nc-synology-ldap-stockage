@@ -3,7 +3,7 @@
 
 param(
     [string]$AppName    = "synoldap",
-    [string]$AppVersion = "3.4.6"
+    [string]$AppVersion = "3.4.7"
 )
 
 $WorkDir   = "F:\Visual Studio Code\NC - Synology"

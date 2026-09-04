@@ -72,9 +72,18 @@ class UserLdapBridgeService {
         $a = self::UL_APP;
 
         // ── Serveur ───────────────────────────────────────────────────────────
-        $this->set($a, $p . 'ldap_host',                 $c['host']);
+        // Attention : user_ldap et synoldap n'expriment pas le chiffrement pareil.
+        //   synoldap  : case « LDAPS » + port 636
+        //   user_ldap : schéma ldaps:// dans l'hôte ; son champ ldap_tls désigne
+        //               StartTLS, qui ne s'utilise que sur le port 389.
+        // Recopier ldap_tls=1 avec le port 636 revenait à demander un StartTLS sur
+        // le port LDAPS → « No LDAP Connection to server ».
+        $useLdaps = $c['tls'] === '1';
+        $host     = $this->stripScheme($c['host']);
+
+        $this->set($a, $p . 'ldap_host',                 ($useLdaps ? 'ldaps://' : '') . $host);
         $this->set($a, $p . 'ldap_port',                 $c['port']);
-        $this->set($a, $p . 'ldap_tls',                  $c['tls']);
+        $this->set($a, $p . 'ldap_tls',                  '0'); // StartTLS : jamais avec ldaps://
         $this->set($a, $p . 'ldap_turn_off_cert_check',  '1'); // Synology : cert auto-signé fréquent
 
         // ── Compte de service ─────────────────────────────────────────────────
@@ -140,6 +149,14 @@ class UserLdapBridgeService {
         // old type (array)". user_ldap a un fallback : il scanne les clés actives
         // (ldap_configuration_active) pour détecter les configs → notre config
         // sera détectée automatiquement sans écrire configuration_prefixes.
+    }
+
+    /**
+     * Retire un éventuel schéma saisi dans le champ hôte (ldap:// ou ldaps://),
+     * pour ne pas produire « ldaps://ldaps://10.0.0.1 ».
+     */
+    private function stripScheme(string $host): string {
+        return (string) preg_replace('#^ldaps?://#i', '', trim($host));
     }
 
     private function set(string $app, string $key, string $value): void {

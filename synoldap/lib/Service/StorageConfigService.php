@@ -158,8 +158,11 @@ class StorageConfigService {
             $authMech = $backendService->getAuthMechanism('null::null');
             if (!$backend) {
                 throw new \RuntimeException(
-                    'Backend « Local » indisponible : vérifiez que '
-                    . "'files_external_allow_local_storage_mount' n'est pas à false dans config.php."
+                    'Backend « Local » indisponible. Vérifiez dans config.php que '
+                    . "'files_external_allow_local_storage_mount' et "
+                    . "'files_external_allow_create_new_local' ne sont pas à false — "
+                    . 'Nextcloud AIO désactive la seconde par défaut '
+                    . "(occ config:system:set files_external_allow_create_new_local --value=true --type=boolean)."
                 );
             }
             if (!$authMech) {

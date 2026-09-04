@@ -7,6 +7,32 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [3.4.7] — 2026-09-04
+
+### Corrigé — LDAPS transmis à `user_ldap` dans un format qu'elle ne comprend pas
+
+Symptôme : SynoLDAP se connectait sans problème au contrôleur de domaine
+(« Connecté à 10.x.x.x:636 »), mais `user_ldap` échouait sur le même serveur —
+`No LDAP Connection to server`, `OC\ServerNotAvailableException` dans
+`user_ldap/lib/Connection.php`. Conséquences en cascade : aucun compte créé dans Nextcloud,
+job `UpdateGroups` en erreur, et page d'administration en 500 dès l'activation de `user_ldap`.
+
+Les deux applications n'expriment pas le chiffrement de la même façon :
+
+| | SynoLDAP | user_ldap |
+|---|---|---|
+| Champ hôte | `10.0.0.1` | `ldaps://10.0.0.1` |
+| Case TLS | LDAPS, port 636 | StartTLS, port 389 uniquement |
+
+Le pont recopiait `ldap_tls = 1` en conservant le port 636 : `user_ldap` tentait un StartTLS
+sur le port LDAPS. Il préfixe désormais l'hôte par `ldaps://` et laisse `ldap_tls` à 0.
+
+Au passage, un schéma saisi dans le champ hôte est retiré avant usage (`ldaps://ldaps://…`),
+et le message d'indisponibilité du backend « Local » cite `files_external_allow_create_new_local`,
+que Nextcloud AIO désactive par défaut.
+
+---
+
 ## [3.4.6] — 2026-09-04
 
 ### Corrigé — Détection de l'app `user_ldap`

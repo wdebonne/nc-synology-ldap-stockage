@@ -1,5 +1,23 @@
 # Changelog
 
+## [3.4.7] - 2026-09-04
+
+### Corrigé
+
+- **`user_ldap` incapable de se connecter en LDAPS** (`No LDAP Connection to server`,
+  `OC\ServerNotAvailableException`) alors que SynoLDAP y parvenait. Les deux applications
+  n'expriment pas le chiffrement de la même manière : SynoLDAP a une case « LDAPS » associée
+  au port 636, tandis que `user_ldap` attend le schéma `ldaps://` **dans le champ hôte**, son
+  propre `ldap_tls` désignant StartTLS — lequel ne s'utilise que sur le port 389. Le pont
+  recopiait `ldap_tls = 1` avec le port 636, demandant donc un StartTLS sur le port LDAPS.
+  Il écrit désormais `ldaps://<hôte>` et laisse `ldap_tls` à 0.
+- Un schéma saisi par habitude dans le champ hôte (`ldaps://10.0.0.1`) est retiré avant
+  usage, au lieu de produire une URI doublée.
+- Le message d'indisponibilité du backend « Local » cite aussi
+  `files_external_allow_create_new_local`, que Nextcloud AIO désactive par défaut.
+
+---
+
 ## [3.4.6] - 2026-09-04
 
 ### Corrigé
