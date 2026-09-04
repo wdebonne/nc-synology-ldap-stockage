@@ -1,5 +1,21 @@
 # Changelog
 
+## [3.4.8] - 2026-09-04
+
+### Corrigé
+
+- **Compte de service non transmis à `user_ldap`** : le pont écrivait le DN de bind dans
+  `ldap_agent_name`, clé que `user_ldap` ne lit pas. Résultat, `occ ldap:show-config`
+  affichait `ldapAgentName` vide alors que `ldapAgentPassword` était rempli, et `user_ldap`
+  tentait un bind anonyme — refusé par l'Active Directory. La clé attendue est **`ldap_dn`**.
+- `ldap_groupfilter_objectclass` (sans séparateur, symétrique de
+  `ldap_userfilter_objectclass`) au lieu de `ldap_group_filter_objectclass`, qui restait vide.
+- Les attributs UUID ne sont plus forcés à `objectGUID` : `user_ldap` détecte l'attribut
+  lui-même et réenregistre `auto`. Les écrire à chaque requête entrait en conflit avec cette
+  détection sans rien apporter.
+
+---
+
 ## [3.4.7] - 2026-09-04
 
 ### Corrigé

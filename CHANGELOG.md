@@ -7,6 +7,25 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [3.4.8] — 2026-09-04
+
+### Corrigé — Le compte de service n'atteignait pas `user_ldap`
+
+`occ ldap:show-config` montrait une configuration complète et correcte, à une ligne près :
+`ldapAgentName` vide, alors que `ldapAgentPassword` valait `***`. `user_ldap` se connectait
+donc en **bind anonyme**, refusé par l'Active Directory — aucun compte créé, aucun groupe lu.
+
+Le pont écrivait le DN dans `ldap_agent_name`. La clé réellement lue par `user_ldap` est
+`ldap_dn` (que `ldap:show-config` restitue sous le libellé `ldapAgentName`). Deux écarts du
+même ordre, révélés par la même sortie, sont corrigés au passage :
+
+- `ldap_groupfilter_objectclass` — sans séparateur, symétrique de `ldap_userfilter_objectclass`
+  qui, lui, fonctionnait — au lieu de `ldap_group_filter_objectclass` resté vide ;
+- les attributs UUID ne sont plus imposés : `user_ldap` détecte l'attribut et réenregistre
+  `auto`, notre écriture à chaque requête ne faisait que lutter contre cette détection.
+
+---
+
 ## [3.4.7] — 2026-09-04
 
 ### Corrigé — LDAPS transmis à `user_ldap` dans un format qu'elle ne comprend pas

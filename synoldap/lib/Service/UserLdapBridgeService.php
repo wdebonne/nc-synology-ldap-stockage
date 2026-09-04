@@ -87,7 +87,10 @@ class UserLdapBridgeService {
         $this->set($a, $p . 'ldap_turn_off_cert_check',  '1'); // Synology : cert auto-signé fréquent
 
         // ── Compte de service ─────────────────────────────────────────────────
-        $this->set($a, $p . 'ldap_agent_name',           $c['bind_dn']);
+        // La clé du DN de bind est « ldap_dn » (affichée « ldapAgentName » par
+        // occ ldap:show-config). « ldap_agent_name » n'est lue par personne :
+        // l'écrire seule laissait user_ldap en bind anonyme, refusé par l'AD.
+        $this->set($a, $p . 'ldap_dn',                   $c['bind_dn']);
         // Mot de passe : base64_encode comme user_ldap::Configuration::saveConfiguration()
         if (!empty($c['bind_password'])) {
             $this->set($a, $p . 'ldap_agent_password',   base64_encode($c['bind_password']));
@@ -126,13 +129,15 @@ class UserLdapBridgeService {
         // ── Groupes ───────────────────────────────────────────────────────────
         $this->set($a, $p . 'ldap_group_filter',         '(objectClass=group)');
         $this->set($a, $p . 'ldap_group_filter_mode',    '0');
-        $this->set($a, $p . 'ldap_group_filter_objectclass', 'group');
+        // Symétrique de ldap_userfilter_objectclass : un seul mot, sans séparateur.
+        $this->set($a, $p . 'ldap_groupfilter_objectclass', 'group');
         $this->set($a, $p . 'ldap_group_display_name',   'cn');
         $this->set($a, $p . 'ldap_group_member_assoc_attribute', 'member');
 
-        // ── UUID (objectGUID pour Active Directory) ───────────────────────────
-        $this->set($a, $p . 'ldap_uuid_user_attribute',  'objectGUID');
-        $this->set($a, $p . 'ldap_uuid_group_attribute', 'objectGUID');
+        // ── UUID ──────────────────────────────────────────────────────────────
+        // Volontairement non écrit : user_ldap détecte l'attribut lui-même et
+        // réenregistre « auto ». Forcer objectGUID à chaque requête entrerait en
+        // conflit avec cette détection sans rien apporter.
 
         // ── Performances ──────────────────────────────────────────────────────
         $this->set($a, $p . 'ldap_cache_ttl',            '600');
