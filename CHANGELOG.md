@@ -7,6 +7,20 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [3.4.2] — 2026-09-04
+
+### Modifié
+
+- Champ **Domaine / Workgroup** de la section Synology : exemple `PAVILLY` au lieu de
+  `WORKGROUP`, avec l'explication de son rôle. Avec le transport « identifiants de
+  l'utilisateur », c'est le **nom de connexion Nextcloud** qui est envoyé au NAS : sans domaine
+  NetBIOS, le Synology refuse l'authentification. La documentation précise également que tous
+  les utilisateurs doivent se connecter avec le même format d'identifiant (`sAMAccountName`).
+- Version incrémentée pour que Nextcloud rejoue la mise à jour de l'application et régénère
+  l'empreinte de cache des ressources statiques (`admin.js`, `admin.css`).
+
+---
+
 ## [3.4.1] — 2026-09-04
 
 ### Corrigé — Erreur 500 sur la page de réglages (Nextcloud 34)

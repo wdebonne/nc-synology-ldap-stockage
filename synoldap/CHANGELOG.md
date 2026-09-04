@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.4.2] - 2026-09-04
+
+### Modifié
+
+- Champ **Domaine / Workgroup** : exemple `PAVILLY` et explication de son rôle — c'est le nom
+  de connexion Nextcloud qui est transmis au NAS, il doit donc être qualifié par le domaine
+  NetBIOS pour que le transport « identifiants de l'utilisateur » fonctionne.
+- Version incrémentée pour forcer la reprise des ressources statiques (JS/CSS) par Nextcloud
+  et les navigateurs après la mise à jour.
+
+---
+
 ## [3.4.1] - 2026-09-04
 
 ### Corrigé
