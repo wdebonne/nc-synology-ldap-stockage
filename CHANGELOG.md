@@ -7,6 +7,18 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [3.4.9] — 2026-09-04
+
+### Corrigé — Faux avertissement de désynchronisation de `user_ldap`
+
+Depuis la 3.4.7, l'hôte transmis à `user_ldap` porte le schéma (`ldaps://10.0.0.1`) tandis que
+celui saisi dans SynoLDAP ne le porte pas. Le bandeau d'état comparant les deux chaînes telles
+quelles, une configuration correcte s'affichait comme désynchronisée avec l'invitation à
+cliquer Sauvegarder — sans que cela n'y change quoi que ce soit. La comparaison ignore
+désormais le schéma.
+
+---
+
 ## [3.4.8] — 2026-09-04
 
 ### Corrigé — Le compte de service n'atteignait pas `user_ldap`

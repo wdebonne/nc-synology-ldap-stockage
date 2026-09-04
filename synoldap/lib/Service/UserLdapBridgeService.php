@@ -199,11 +199,13 @@ class UserLdapBridgeService {
             ];
         }
 
-        $host   = $this->config->getAppValue(self::APP_ID, 'ldap_host', '');
+        $host   = $this->stripScheme($this->config->getAppValue(self::APP_ID, 'ldap_host', ''));
         $ulHost = $this->config->getAppValue(self::UL_APP, self::UL_PREFIX . 'ldap_host', '');
         $active = $this->config->getAppValue(self::UL_APP, self::UL_PREFIX . 'ldap_configuration_active', '0');
 
-        $synced = ($ulHost === $host && $active === '1' && !empty($host));
+        // user_ldap stocke le schéma dans l'hôte (ldaps://…) : comparer les hôtes nus,
+        // sans quoi une configuration LDAPS correcte serait signalée comme désynchronisée.
+        $synced = ($this->stripScheme($ulHost) === $host && $active === '1' && $host !== '');
 
         return [
             'available'  => true,

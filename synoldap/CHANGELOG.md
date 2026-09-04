@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.4.9] - 2026-09-04
+
+### Corrigé
+
+- **Faux avertissement « user_ldap pointe sur ldaps://… au lieu de … »** : le bandeau d'état
+  comparait l'hôte de `user_ldap`, qui porte le schéma (`ldaps://10.0.0.1`), à celui de
+  SynoLDAP, qui ne le porte pas. Une configuration LDAPS parfaitement synchronisée était donc
+  signalée en défaut, invitant à cliquer Sauvegarder sans fin. Les hôtes sont désormais
+  comparés sans leur schéma.
+
+---
+
 ## [3.4.8] - 2026-09-04
 
 ### Corrigé
