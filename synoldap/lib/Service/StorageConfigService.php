@@ -440,8 +440,10 @@ class StorageConfigService {
                 }
             }
 
-            $backendOptions = $storage['options'];
-            $authOptions    = $storage['auth'];
+            // Les identifiants du mécanisme d'authentification font partie des options
+            // du backend : StorageConfig n'expose pas de setAuthOptions() — l'appeler
+            // levait « Call to undefined method » et aucun montage n'était créé.
+            $backendOptions = array_merge($storage['options'], $storage['auth']);
             $sharing        = $this->isSharingEnabled();
 
             $existingMount = $forAll
@@ -456,13 +458,11 @@ class StorageConfigService {
                 // oc_mounts via le cache → dirty table reads → SetupManager::setupForUser()
                 // rate partiellement → PROPFIND retourne 401 dans le même processus PHP.
                 $existingOptions = $existingMount->getBackendOptions();
-                $existingAuth    = $existingMount->getAuthOptions();
                 $existingBackend = $existingMount->getBackend()?->getIdentifier();
                 $existingMech    = $existingMount->getAuthMechanism()?->getIdentifier();
                 $existingSharing = $existingMount->getMountOptions()['enable_sharing'] ?? null;
 
                 $changed = $existingOptions !== $backendOptions
-                    || $existingAuth !== $authOptions
                     || $existingBackend !== $backend->getIdentifier()
                     || $existingMech !== $authMech->getIdentifier()
                     || $existingSharing !== $sharing;
@@ -473,7 +473,6 @@ class StorageConfigService {
                     $existingMount->setBackend($backend);
                     $existingMount->setAuthMechanism($authMech);
                     $existingMount->setBackendOptions($backendOptions);
-                    $existingMount->setAuthOptions($authOptions);
                     $existingMount->setMountOptions($this->mountOptions($sharing));
                     $storagesService->updateStorage($existingMount);
                     $action = 'mis à jour';
@@ -486,7 +485,6 @@ class StorageConfigService {
                 $storageConfig->setBackend($backend);
                 $storageConfig->setAuthMechanism($authMech);
                 $storageConfig->setBackendOptions($backendOptions);
-                $storageConfig->setAuthOptions($authOptions);
                 $storageConfig->setMountOptions($this->mountOptions($sharing));
                 if ($forAll) {
                     // Ni utilisateur ni groupe applicable = visible par tout le monde

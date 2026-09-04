@@ -1,5 +1,20 @@
 # Changelog
 
+## [3.4.11] - 2026-09-04
+
+### Corrigé
+
+- **Aucun montage n'était jamais créé** : `Call to undefined method
+  OCA\Files_External\Lib\StorageConfig::setAuthOptions()`. Cette méthode n'existe pas dans
+  `files_external` — les identifiants du mécanisme d'authentification (`user`, `password`)
+  font partie des **options du backend**. Le code appelait `setAuthOptions()` à la création
+  comme à la mise à jour d'un montage : l'exception était capturée et transformée en ligne
+  d'erreur dans le journal, sans qu'aucun stockage externe ne soit enregistré.
+  Les identifiants sont désormais fusionnés dans `backendOptions`, et la comparaison
+  anti-réécriture ne s'appuie plus sur `getAuthOptions()`, tout aussi inexistante.
+
+---
+
 ## [3.4.10] - 2026-09-04
 
 ### Ajouté

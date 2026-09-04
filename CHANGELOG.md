@@ -7,6 +7,26 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [3.4.11] — 2026-09-04
+
+### Corrigé — Aucun montage n'était créé (`setAuthOptions()` inexistante)
+
+`Call to undefined method OCA\Files_External\Lib\StorageConfig::setAuthOptions()` :
+le service de montage appelait cette méthode à la création comme à la mise à jour d'un
+stockage. L'exception étant capturée par le `try/catch` de `doMount()`, elle se traduisait
+par une simple ligne rouge dans le journal — « ✗ tous les utilisateurs : Call to undefined
+method… » — pendant que `occ files_external:list` répondait « No admin mounts configured ».
+
+Vérification faite dans la source de Nextcloud 34 : `StorageConfig` n'expose ni
+`setAuthOptions()` ni `getAuthOptions()`. Les identifiants du mécanisme d'authentification
+(`user`, `password`) sont stockés **avec les options du backend**, dans le même tableau.
+
+Ils sont donc fusionnés dans `backendOptions` avant écriture, et la comparaison
+anti-réécriture (garde contre les erreurs 401 de NC 33) porte désormais sur ce seul tableau,
+le backend, le mécanisme d'authentification et l'option de partage.
+
+---
+
 ## [3.4.10] — 2026-09-04
 
 ### Ajouté — Alerte quand `files_external` est désactivée
