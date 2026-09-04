@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.4.10] - 2026-09-04
+
+### Ajouté
+
+- **Alerte quand `files_external` est désactivée.** Sans cette app, aucun montage ne peut être
+  créé : la configuration paraît correcte, le bouton « Appliquer les montages » ne produit
+  rien d'exploitable et le dossier n'apparaît jamais chez les utilisateurs. Le bandeau d'état
+  de la section 1 signale désormais aussi ce cas, avec la commande
+  « occ app:enable files_external ».
+
+---
+
 ## [3.4.9] - 2026-09-04
 
 ### Corrigé

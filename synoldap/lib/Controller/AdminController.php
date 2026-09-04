@@ -136,7 +136,16 @@ class AdminController extends Controller {
     #[AdminRequired]
     #[NoCSRFRequired]
     public function getUserLdapStatus(): JSONResponse {
-        return new JSONResponse($this->userLdapBridge->getStatus());
+        $status = $this->userLdapBridge->getStatus();
+
+        // files_external est l'autre dépendance silencieuse : sans elle, aucun
+        // montage ne peut être créé, et l'app n'a aucun moyen de le faire savoir
+        // avant que l'admin ne clique « Appliquer les montages ».
+        $status['files_external'] = class_exists(
+            \OCA\Files_External\Service\GlobalStoragesService::class
+        );
+
+        return new JSONResponse($status);
     }
 
     /**

@@ -135,11 +135,26 @@
         const box = document.getElementById('user-ldap-status');
         try {
             const res = await apiFetch('/admin/user-ldap-status');
-            const ok  = res.available && res.configured;
-            box.className = 'synoldap-status synoldap-status-'
-                + (res.available ? (ok ? 'success' : 'warning') : 'error');
-            box.textContent = (ok ? '✓ ' : '⚠️ ') + (res.message || '');
-            box.style.display = ok ? 'none' : 'block';
+            const problems = [];
+
+            if (!res.available || !res.configured) {
+                problems.push(res.message || '');
+            }
+            if (res.files_external === false) {
+                problems.push("L'app « Stockage externe » (files_external) est désactivée : "
+                    + 'aucun montage ne peut être créé. Activez-la depuis Administration → '
+                    + 'Applications, ou « occ app:enable files_external ».');
+            }
+
+            if (problems.length === 0) {
+                box.style.display = 'none';
+                return;
+            }
+
+            const blocking = !res.available || res.files_external === false;
+            box.className = 'synoldap-status synoldap-status-' + (blocking ? 'error' : 'warning');
+            box.textContent = '⚠️ ' + problems.join(' — ');
+            box.style.display = 'block';
         } catch (e) {
             box.style.display = 'none';
         }

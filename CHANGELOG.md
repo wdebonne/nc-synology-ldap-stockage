@@ -7,6 +7,20 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [3.4.10] — 2026-09-04
+
+### Ajouté — Alerte quand `files_external` est désactivée
+
+Deuxième dépendance silencieuse après `user_ldap` : sans l'app « Stockage externe », aucun
+montage ne peut être créé. Rien ne le signalait avant de cliquer « Appliquer les montages »,
+et le symptôme observé — un dossier qui n'apparaît jamais chez les utilisateurs — n'oriente
+pas vers cette cause.
+
+Le bandeau d'état de la section 1 couvre maintenant les deux dépendances et distingue ce qui
+bloque (app absente ou désactivée) de ce qui mérite seulement une sauvegarde.
+
+---
+
 ## [3.4.9] — 2026-09-04
 
 ### Corrigé — Faux avertissement de désynchronisation de `user_ldap`
