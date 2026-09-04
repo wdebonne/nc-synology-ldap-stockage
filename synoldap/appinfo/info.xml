@@ -12,14 +12,14 @@ Uses the same architecture as user_ldap (persistent user mapping table) for stab
 **Features v3.0:**
 - Automatic AD group → Nextcloud group sync on each login (via user_ldap)
 - Automatic Nextcloud admin promotion via configurable AD group
-- Two transports: SMB (smbclient) or Local — for a Synology share already mounted over NFSv4 on the host (Docker / Nextcloud AIO)
+- Three transports: SMB with a service account, SMB with each user's own AD credentials (the NAS enforces its Windows ACLs at every level), or Local — for a Synology share already mounted over NFSv4 on the host (Docker / Nextcloud AIO)
 - Four mount modes: manual, auto by group name, auto by Synology ACL, and a common share visible by everyone
 - Active Directory auto-detection: reads the RootDSE and fills in the base DNs
 - ACL mode: reads actual permissions via Synology DSM API — each user sees exactly the folders allowed by their AD groups
 - Identical Windows / Nextcloud folder structure via Mount Prefix field (/NAS/Accounting, etc.)
 - Visual admin interface with real-time ACL preview and SMB configuration
     ]]></description>
-    <version>3.3.0</version>
+    <version>3.4.0</version>
     <licence>agpl</licence>
     <author homepage="https://github.com/wdebonne">wdebonne</author>
     <namespace>SynoLDAP</namespace>

@@ -136,6 +136,36 @@ Renseigner le port, l'utilisateur et le mot de passe DSM dans la section "Connex
 
 ---
 
+## Problèmes de montages SMB « identifiants de l'utilisateur »
+
+### Le dossier est vide ou affiche une erreur d'accès
+
+Le montage utilise le mot de passe AD de l'utilisateur connecté. Vérifier dans l'ordre :
+
+1. **L'utilisateur s'est-il connecté avec son mot de passe ?** Une session SSO ou un client
+   configuré avant un changement de mot de passe ne fournit pas d'identifiants valides —
+   se déconnecter puis se reconnecter.
+2. **Mot de passe AD récemment modifié ?** Les clients mobiles et de bureau doivent être
+   reconnectés pour régénérer leur jeton.
+3. **Le compte a-t-il accès au partage en SMB ?** Le tester depuis un PC Windows avec le
+   même compte : `\\NAS_MAIRIE\Users`.
+4. Passer l'option *Identifiants utilisateur — conservation* sur **En base (chiffré)** :
+   les identifiants restent disponibles pour les clients mobiles et les tâches de fond.
+
+### Les aperçus, la recherche plein texte ou les liens publics ne fonctionnent pas
+
+C'est attendu sur ce transport : les tâches de fond s'exécutent hors session utilisateur et
+n'ont donc aucun identifiant pour ouvrir le partage. Utiliser le transport SMB avec compte de
+service, ou NFS, pour les dossiers qui doivent rester accessibles aux traitements serveur.
+
+### Les utilisateurs voient des dossiers auxquels ils n'ont pas droit
+
+Le partage est visible mais son contenu reste refusé par le NAS. Pour masquer complètement ces
+dossiers, activer côté DSM **« Cacher les sous-dossiers et fichiers des utilisateurs sans
+autorisations »** sur le dossier partagé.
+
+---
+
 ## Problèmes de montages NFS / local
 
 ### « … est introuvable depuis le conteneur Nextcloud »

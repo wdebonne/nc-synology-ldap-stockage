@@ -39,6 +39,7 @@ class AdminController extends Controller {
         'storage_backend',
         'local_root',
         'mount_enable_sharing',
+        'smb_user_auth',
         'synology_smb_user',
         'synology_smb_domain',
         // API DSM
@@ -681,6 +682,7 @@ class AdminController extends Controller {
             'synology_api_ssl'       => '0',
             'storage_backend'        => 'smb',
             'mount_enable_sharing'   => '1',
+            'smb_user_auth'          => 'session',
             default                  => '',
         };
     }

@@ -1,5 +1,32 @@
 # Changelog
 
+## [3.4.0] - 2026-09-04
+
+### Ajouté
+
+- **Transport « SMB — identifiants de l'utilisateur »** : un seul montage pour tous, où chaque
+  utilisateur s'authentifie au NAS avec son propre compte AD. Le Synology applique alors ses
+  **ACL Windows à tous les niveaux** (et pas seulement au premier sous-dossier) : l'arborescence
+  est identique à celle du lecteur réseau, sur le web comme sur mobile, tablette et PC distant.
+- Option **Identifiants utilisateur — conservation** : *en session* (aucun mot de passe stocké)
+  ou *en base* (chiffré, plus robuste pour les clients mobiles et les tâches de fond).
+- Valeur **SMB user** dans la colonne *Type* des correspondances.
+
+### Modifié
+
+- Le mécanisme d'authentification est désormais comparé avant toute réécriture d'un montage :
+  basculer une ligne du compte de service vers les identifiants utilisateur met le montage à
+  jour sur place.
+
+### Limites connues du transport « identifiants de l'utilisateur »
+
+- Nécessite une connexion avec le mot de passe AD (pas de SSO sans mot de passe)
+- Un changement de mot de passe AD casse le montage jusqu'à la reconnexion du client
+- Les tâches de fond (aperçus, indexation, `files:scan`) et les liens de partage public n'ont
+  pas accès au montage
+
+---
+
 ## [3.3.0] - 2026-09-04
 
 ### Ajouté

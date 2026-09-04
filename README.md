@@ -5,7 +5,7 @@
 [![Nextcloud](https://img.shields.io/badge/Nextcloud-25--34-0082c9?logo=nextcloud)](https://nextcloud.com)
 [![PHP](https://img.shields.io/badge/PHP-8.1%2B-777bb4?logo=php)](https://php.net)
 [![Licence](https://img.shields.io/badge/Licence-AGPL--3.0-green)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-3.3.0-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/Version-3.4.0-blue)](CHANGELOG.md)
 
 ---
 
@@ -16,11 +16,12 @@
 - **Provisionnement automatique** — le compte Nextcloud est créé à la première connexion, avec le nom complet récupéré depuis l'AD
 - **Source unique de vérité** — désactiver un compte sur Synology = l'accès Nextcloud est immédiatement révoqué
 
-### Transport — SMB ou NFS (nouveau v3.3)
+### Transport — SMB, SMB par utilisateur ou NFS (v3.3 / v3.4)
 | Transport | Quand l'utiliser |
 |-----------|------------------|
-| **SMB / CIFS** | Nextcloud se connecte directement au NAS ; nécessite l'extension PHP `smbclient` et un compte de service SMB |
-| **NFS / local** ★ | Le NAS est déjà monté sur l'hôte Docker en NFSv4 et exposé au conteneur : Nextcloud lit les fichiers en local, sans compte SMB ni `smbclient` |
+| **SMB — compte de service** | Nextcloud se connecte au NAS avec un compte unique ; ce sont les montages par groupe qui découpent les accès |
+| **SMB — identifiants de l'utilisateur** ★ | Chaque utilisateur s'authentifie au NAS avec son propre compte AD : le Synology applique ses **ACL Windows à tous les niveaux**, arborescence identique au lecteur réseau sur web, mobile et PC distant |
+| **NFS / local** | Le NAS est déjà monté sur l'hôte Docker en NFSv4 et exposé au conteneur : Nextcloud lit les fichiers en local, sans compte SMB ni `smbclient` |
 
 Le transport se choisit globalement et peut être forcé ligne par ligne (colonne **Type**).
 

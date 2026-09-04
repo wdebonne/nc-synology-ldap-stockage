@@ -11,11 +11,14 @@ use Psr\Log\LoggerInterface;
 /**
  * Création et mise à jour des montages « Stockage externe » Nextcloud.
  *
- * Deux transports vers le Synology :
- *  - SMB   : Nextcloud parle au NAS en CIFS (extension smbclient)
- *  - Local : le partage est déjà monté sur l'hôte (NFSv4) et exposé au conteneur
- *            Nextcloud ; on utilise le backend « local » de files_external sur
- *            /racine/partage/sous-dossier
+ * Trois transports vers le Synology :
+ *  - SMB      : Nextcloud parle au NAS en CIFS avec un compte de service unique
+ *  - SMB user : idem, mais chaque utilisateur s'authentifie avec son propre compte
+ *               AD — le NAS applique alors ses ACL Windows à tous les niveaux,
+ *               exactement comme sur un lecteur réseau
+ *  - Local    : le partage est déjà monté sur l'hôte (NFSv4) et exposé au conteneur
+ *               Nextcloud ; on utilise le backend « local » de files_external sur
+ *               /racine/partage/sous-dossier
  *
  * Quatre modes de correspondance :
  *  - manuel : groupe AD (ou utilisateur NC) → partage/sous-dossier précis
@@ -26,8 +29,9 @@ use Psr\Log\LoggerInterface;
 class StorageConfigService {
     private const APP_ID = 'synoldap';
 
-    public const TYPE_SMB   = 'smb';
-    public const TYPE_LOCAL = 'local';
+    public const TYPE_SMB      = 'smb';
+    public const TYPE_SMB_USER = 'smb_user';
+    public const TYPE_LOCAL    = 'local';
 
     public function __construct(
         private IConfig $config,
@@ -50,13 +54,20 @@ class StorageConfigService {
         return 'manual';
     }
 
-    /** smb | local — la valeur de la ligne, sinon le transport global. */
+    /** smb | smb_user | local — la valeur de la ligne, sinon le transport global. */
     public function typeOf(array $mapping): string {
+        $known = [self::TYPE_SMB, self::TYPE_SMB_USER, self::TYPE_LOCAL];
+
         $type = trim((string) ($mapping['storage_type'] ?? ''));
-        if ($type !== self::TYPE_SMB && $type !== self::TYPE_LOCAL) {
+        if (!in_array($type, $known, true)) {
             $type = $this->config->getAppValue(self::APP_ID, 'storage_backend', self::TYPE_SMB);
         }
-        return $type === self::TYPE_LOCAL ? self::TYPE_LOCAL : self::TYPE_SMB;
+        return in_array($type, $known, true) ? $type : self::TYPE_SMB;
+    }
+
+    /** Un transport qui parle SMB au NAS (compte de service ou compte utilisateur). */
+    private static function isSmb(string $type): bool {
+        return $type === self::TYPE_SMB || $type === self::TYPE_SMB_USER;
     }
 
     private function getLocalRoot(): string {
@@ -101,11 +112,47 @@ class StorageConfigService {
     }
 
     /**
+     * Retourne le premier mécanisme d'authentification disponible parmi la liste.
+     */
+    private function firstAuthMechanism($backendService, array $identifiers): ?object {
+        foreach ($identifiers as $identifier) {
+            $mechanism = $backendService->getAuthMechanism($identifier);
+            if ($mechanism) {
+                return $mechanism;
+            }
+        }
+        return null;
+    }
+
+    /**
      * Backend et mécanisme d'authentification pour un transport donné.
      *
      * @return array{0: object, 1: object}
      */
     private function resolveBackend($backendService, string $type): array {
+        if ($type === self::TYPE_SMB_USER) {
+            $backend = $backendService->getBackend('smb');
+            if (!$backend) {
+                throw new \RuntimeException(
+                    "Backend SMB non disponible. Vérifiez que l'extension PHP smbclient est installée."
+                );
+            }
+
+            // « en base » survit aux clients mobiles et aux tâches de fond ;
+            // « en session » ne stocke aucun mot de passe côté serveur.
+            $stored   = $this->config->getAppValue(self::APP_ID, 'smb_user_auth', 'session') === 'stored';
+            $authMech = $stored
+                ? $this->firstAuthMechanism($backendService, ['password::logincredentials', 'password::sessioncredentials'])
+                : $this->firstAuthMechanism($backendService, ['password::sessioncredentials', 'password::logincredentials']);
+
+            if (!$authMech) {
+                throw new \RuntimeException(
+                    "Aucun mécanisme « identifiants de connexion » disponible dans files_external."
+                );
+            }
+            return [$backend, $authMech];
+        }
+
         if ($type === self::TYPE_LOCAL) {
             $backend  = $backendService->getBackend('local');
             $authMech = $backendService->getAuthMechanism('null::null');
@@ -177,7 +224,9 @@ class StorageConfigService {
                 'root'   => $subfolder,
                 'domain' => $creds['domain'],
             ],
-            'auth' => [
+            // En transport « identifiants utilisateur », aucun identifiant n'est
+            // enregistré : Nextcloud fournit ceux de l'utilisateur connecté.
+            'auth' => $type === self::TYPE_SMB_USER ? [] : [
                 'user'     => $creds['user'],
                 'password' => $creds['pass'],
             ],
@@ -231,7 +280,7 @@ class StorageConfigService {
             if ($mode === 'acl' || $mode === 'name') {
                 // En local (NFS) un partage vide est admis pour le mode nom :
                 // les dossiers sont cherchés directement sous la racine locale.
-                if ($rootShare === '' && ($mode === 'acl' || $type === self::TYPE_SMB)) {
+                if ($rootShare === '' && ($mode === 'acl' || self::isSmb($type))) {
                     continue;
                 }
 
@@ -281,7 +330,7 @@ class StorageConfigService {
             $defaultName = $ncUser ?: $ncGroup;
             $mountPoint  = trim((string) ($mapping['mount_point'] ?? '')) ?: $defaultName;
 
-            if (($share === '' && $type === self::TYPE_SMB) || ($ncGroup === '' && $ncUser === '')) {
+            if (($share === '' && self::isSmb($type)) || ($ncGroup === '' && $ncUser === '')) {
                 continue;
             }
 
@@ -406,11 +455,13 @@ class StorageConfigService {
                 $existingOptions = $existingMount->getBackendOptions();
                 $existingAuth    = $existingMount->getAuthOptions();
                 $existingBackend = $existingMount->getBackend()?->getIdentifier();
+                $existingMech    = $existingMount->getAuthMechanism()?->getIdentifier();
                 $existingSharing = $existingMount->getMountOptions()['enable_sharing'] ?? null;
 
                 $changed = $existingOptions !== $backendOptions
                     || $existingAuth !== $authOptions
                     || $existingBackend !== $backend->getIdentifier()
+                    || $existingMech !== $authMech->getIdentifier()
                     || $existingSharing !== $sharing;
 
                 if ($changed) {

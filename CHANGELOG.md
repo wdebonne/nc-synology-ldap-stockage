@@ -7,6 +7,32 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [3.4.0] — 2026-09-04
+
+### Ajouté — Transport « SMB, identifiants de l'utilisateur »
+
+Troisième transport, pour reproduire exactement le comportement du lecteur réseau Windows :
+un **seul montage** (`//NAS/Users`) partagé par tous les utilisateurs, chacun s'authentifiant
+au NAS avec **son propre compte AD**. C'est le Synology qui applique ses ACL Windows, à tous
+les niveaux de l'arborescence et fichier par fichier — y compris depuis les applications
+mobiles et tablettes.
+
+- Nouveau type de ligne **SMB user** (colonne *Type*) et nouveau transport global
+- Option `smb_user_auth` : identifiants conservés *en session* (aucun mot de passe stocké) ou
+  *en base* (chiffré, plus robuste pour les clients mobiles et les tâches de fond) —
+  mécanismes `password::sessioncredentials` / `password::logincredentials` de `files_external`
+- Aucune découverte ACL n'est nécessaire sur ce transport : ni API DSM, ni montage par groupe
+- Le mécanisme d'authentification entre dans la comparaison anti-réécriture : une ligne qui
+  passe du compte de service aux identifiants utilisateur est mise à jour sur place
+
+**Limites** : nécessite une connexion avec mot de passe AD (pas de SSO), un changement de mot
+de passe casse le montage jusqu'à la reconnexion du client, et les tâches de fond (aperçus,
+indexation, `files:scan`) comme les liens de partage public n'ont pas accès au montage.
+Activer côté DSM « Cacher les sous-dossiers et fichiers des utilisateurs sans autorisations »
+pour masquer les dossiers interdits au lieu de les afficher inaccessibles.
+
+---
+
 ## [3.3.0] — 2026-09-04
 
 ### Ajouté — Transport NFS / local

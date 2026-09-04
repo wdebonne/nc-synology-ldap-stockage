@@ -134,7 +134,8 @@ style('synoldap', 'admin');
                 <div class="synoldap-field">
                     <label for="storage_backend">Transport par défaut</label>
                     <select id="storage_backend" name="storage_backend">
-                        <option value="smb">SMB / CIFS — Nextcloud se connecte au NAS</option>
+                        <option value="smb">SMB — compte de service (droits pilotés par Nextcloud)</option>
+                        <option value="smb_user">SMB — identifiants de l'utilisateur (ACL du NAS) ★</option>
                         <option value="local">NFS / local — partage déjà monté dans le conteneur</option>
                     </select>
                     <span class="synoldap-hint">Modifiable ligne par ligne (colonne Type)</span>
@@ -181,6 +182,19 @@ style('synoldap', 'admin');
                     <label for="synology_smb_domain">Domaine / Workgroup</label>
                     <input type="text" id="synology_smb_domain" name="synology_smb_domain"
                            placeholder="WORKGROUP" />
+                </div>
+                <div class="synoldap-field">
+                    <label for="smb_user_auth">Identifiants utilisateur — conservation</label>
+                    <select id="smb_user_auth" name="smb_user_auth">
+                        <option value="session">En session — aucun mot de passe stocké</option>
+                        <option value="stored">En base (chiffré) — compatible mobile et tâches de fond</option>
+                    </select>
+                    <span class="synoldap-hint">
+                        Utilisé par le transport « SMB — identifiants de l'utilisateur » :
+                        chaque utilisateur accède au NAS avec son compte AD, le Synology applique
+                        ses ACL Windows à tous les niveaux. Pensez à activer côté DSM
+                        « Cacher les sous-dossiers et fichiers des utilisateurs sans autorisations ».
+                    </span>
                 </div>
             </div>
             <div class="synoldap-form-grid">

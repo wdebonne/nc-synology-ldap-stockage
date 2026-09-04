@@ -37,11 +37,42 @@ Cliquer **Tester la connexion LDAP** pour valider et voir les groupes détectés
 
 | Transport | Description |
 |-----------|-------------|
-| **SMB / CIFS** | Nextcloud se connecte au NAS en CIFS. Nécessite l'extension PHP `smbclient` et un compte de service SMB. |
+| **SMB — compte de service** | Nextcloud se connecte au NAS en CIFS avec un compte unique. Les accès sont découpés par les montages par groupe créés par l'app. |
+| **SMB — identifiants de l'utilisateur** | Un seul montage pour tout le monde : chaque utilisateur s'authentifie au NAS avec son compte AD et le Synology applique ses ACL Windows, à tous les niveaux. |
 | **NFS / local** | Le partage est déjà monté sur l'hôte (NFSv4) et visible dans le conteneur. Nextcloud lit les fichiers en local. |
 
 Le transport choisi ici est celui utilisé par défaut ; chaque ligne de correspondance peut le
 surcharger avec la colonne **Type**.
+
+### Transport SMB — identifiants de l'utilisateur
+
+C'est le mode le plus proche du lecteur réseau Windows : **le NAS arbitre**, pas Nextcloud.
+Un membre de `COMPTA` qui n'a pas de droit sur `COMPTA/MARCHE PUBLIC` ne le voit pas, à
+n'importe quelle profondeur — y compris depuis les applications mobiles et tablettes.
+
+Configuration type : une seule ligne **Commun**, type **SMB user**, partage `Users`,
+point de montage `Users`. Aucune ligne ACL n'est nécessaire pour ce partage.
+
+| Champ | Effet |
+|-------|-------|
+| Identifiants utilisateur — conservation : **En session** | Aucun mot de passe stocké côté serveur |
+| Identifiants utilisateur — conservation : **En base (chiffré)** | Plus robuste pour les clients mobiles et les tâches de fond |
+
+**Limites à connaître :**
+
+| Situation | Conséquence |
+|-----------|-------------|
+| Connexion (web, mobile, bureau) avec le mot de passe AD | ✅ le montage fonctionne |
+| Mot de passe AD modifié | ⚠️ le montage échoue jusqu'à la reconnexion du client |
+| Connexion SSO/SAML sans mot de passe | ❌ pas de montage |
+| Tâches de fond : aperçus, indexation plein texte, `files:scan`, liens de partage public | ❌ pas d'accès au montage |
+
+> Côté DSM, activer sur le partage l'option **« Cacher les sous-dossiers et fichiers des
+> utilisateurs sans autorisations »** : sinon les dossiers interdits restent visibles mais
+> inaccessibles, comme sur un partage Windows sans énumération basée sur l'accès.
+
+> L'option « Autoriser le partage Nextcloud des fichiers montés » a peu d'intérêt sur ce
+> transport : un partage nécessite un accès au stockage hors session du propriétaire.
 
 ### Transport NFS / local
 
@@ -106,8 +137,8 @@ Renseigner le nom du groupe AD dont les membres doivent recevoir les droits admi
 | **Auto par ACL ★** | Lit les ACL Synology — chaque utilisateur voit les dossiers autorisés par ses groupes |
 | **Commun** | Un dossier monté pour tous les utilisateurs, sans condition de groupe |
 
-La colonne **Type** (Défaut / SMB / NFS) permet de mélanger les transports : par exemple un
-partage local en NFS et un partage distant en SMB.
+La colonne **Type** (Défaut / SMB / SMB user / NFS) permet de mélanger les transports : par
+exemple le partage principal en « SMB user » (ACL du NAS) et un dossier commun en NFS.
 
 ### Ligne manuelle
 

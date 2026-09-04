@@ -135,7 +135,7 @@
                 'ldap_user_base_dn', 'ldap_group_base_dn',
                 'ldap_membership_mode', 'ldap_user_attr',
                 'admin_ldap_group',
-                'synology_host', 'storage_backend', 'local_root',
+                'synology_host', 'storage_backend', 'local_root', 'smb_user_auth',
                 'synology_smb_user', 'synology_smb_domain',
                 'synology_api_port', 'synology_api_user',
             ].forEach(key => {
@@ -243,9 +243,10 @@
             <td class="type-cell">
                 <select class="synoldap-table-input" data-field="storage_type"
                         title="Transport utilisé pour ce montage">
-                    ${option('',      'Défaut', type)}
-                    ${option('smb',   'SMB', type)}
-                    ${option('local', 'NFS', type)}
+                    ${option('',         'Défaut', type)}
+                    ${option('smb',      'SMB', type)}
+                    ${option('smb_user', 'SMB user', type)}
+                    ${option('local',    'NFS', type)}
                 </select>
             </td>`;
     }
@@ -437,6 +438,7 @@
             synology_host:        document.getElementById('synology_host').value,
             storage_backend:      document.getElementById('storage_backend').value,
             local_root:           document.getElementById('local_root').value,
+            smb_user_auth:        document.getElementById('smb_user_auth').value,
             mount_enable_sharing: document.getElementById('mount_enable_sharing').checked ? '1' : '0',
             synology_smb_user:    document.getElementById('synology_smb_user').value,
             synology_smb_password:document.getElementById('synology_smb_password').value,
