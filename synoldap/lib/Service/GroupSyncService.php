@@ -378,19 +378,50 @@ class GroupSyncService {
     }
 
     /**
+     * Fait découvrir un compte par les backends d'utilisateurs.
+     *
+     * Les comptes Nextcloud sont créés par user_ldap, à la première connexion ou lors
+     * d'une énumération. Une recherche ciblée déclenche cette énumération et crée la
+     * correspondance LDAP → compte, ce qui rend l'utilisateur synchronisable ici.
+     */
+    private function provisionUser(string $uid): ?IUser {
+        try {
+            foreach ($this->userManager->search($uid, 10) as $candidate) {
+                if (strcasecmp($candidate->getUID(), $uid) === 0) {
+                    $this->logger->info("[SynoLDAP] Compte provisionné via le backend : {$uid}");
+                    return $candidate;
+                }
+            }
+        } catch (\Throwable $e) {
+            $this->logger->warning("[SynoLDAP] Provisionnement impossible pour {$uid}: " . $e->getMessage());
+        }
+        return null;
+    }
+
+    /**
      * Synchronise tous les utilisateurs LDAP connus dans Nextcloud.
      */
     public function syncAllUsers(): array {
-        $results = ['synced' => 0, 'skipped' => 0, 'errors' => []];
+        $results = ['synced' => 0, 'provisioned' => 0, 'skipped' => 0, 'errors' => []];
 
         try {
             $ldapUids = $this->ldapService->getAllUserUids();
         } catch (\Throwable $e) {
-            return ['synced' => 0, 'skipped' => 0, 'errors' => [$e->getMessage()]];
+            return ['synced' => 0, 'provisioned' => 0, 'skipped' => 0, 'errors' => [$e->getMessage()]];
         }
 
         foreach ($ldapUids as $uid) {
             $user = $this->userManager->get($uid);
+
+            // Compte encore inconnu de Nextcloud : le faire découvrir par les
+            // backends (user_ldap) plutôt que de l'ignorer silencieusement.
+            if (!$user) {
+                $user = $this->provisionUser($uid);
+                if ($user) {
+                    $results['provisioned']++;
+                }
+            }
+
             if (!$user) {
                 $results['skipped']++;
                 continue;

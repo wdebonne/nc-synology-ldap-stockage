@@ -1,5 +1,20 @@
 # Changelog
 
+## [3.4.5] - 2026-09-04
+
+### Modifié
+
+- **« Synchroniser tous les utilisateurs » provisionne les comptes manquants.** Le bouton ne
+  traitait que les comptes déjà présents dans Nextcloud : sur une instance neuve, tous les
+  utilisateurs de l'AD étaient comptés comme « ignorés ». Une recherche ciblée est désormais
+  lancée pour chaque compte inconnu, ce qui déclenche son énumération par `user_ldap` et la
+  création de la correspondance annuaire → compte Nextcloud.
+- Le rapport distingue les comptes **créés** des comptes **synchronisés**, et le message
+  d'« ignorés » indique la cause probable (app `user_ldap` inactive ou mal configurée) au
+  lieu d'un simple compteur.
+
+---
+
 ## [3.4.4] - 2026-09-04
 
 ### Corrigé

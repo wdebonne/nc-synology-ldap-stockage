@@ -7,6 +7,26 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [3.4.5] — 2026-09-04
+
+### Modifié — La synchronisation globale crée les comptes manquants
+
+`syncAllUsers()` n'agissait que sur les utilisateurs **déjà connus de Nextcloud** : sur une
+instance fraîchement configurée, où aucun agent ne s'est encore connecté, le bouton
+« Synchroniser tous les utilisateurs maintenant » renvoyait « 0 synchronisé(s),
+N ignoré(s) » — les comptes étaient pourtant bien trouvés dans l'annuaire.
+
+Pour chaque identifiant LDAP inconnu, l'application demande maintenant une recherche aux
+backends d'utilisateurs. Cette recherche déclenche l'énumération par `user_ldap`, qui crée la
+correspondance annuaire → compte Nextcloud ; l'utilisateur devient alors synchronisable
+(groupes, profil, montages) sans attendre sa première connexion.
+
+Le rapport distingue les comptes créés des comptes synchronisés, et le message d'« ignorés »
+oriente vers la cause probable — `user_ldap` désactivée ou configuration non reprise
+(`occ ldap:show-config`).
+
+---
+
 ## [3.4.4] — 2026-09-04
 
 ### Corrigé — Comptes machine remontés comme utilisateurs

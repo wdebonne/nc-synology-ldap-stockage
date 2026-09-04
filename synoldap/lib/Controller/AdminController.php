@@ -457,8 +457,13 @@ class AdminController extends Controller {
     public function syncAll(): JSONResponse {
         $results = $this->groupSyncService->syncAllUsers();
         $message = "Synchronisation terminée : {$results['synced']} utilisateur(s) synchronisé(s)";
+        if (!empty($results['provisioned'])) {
+            $message .= " (dont {$results['provisioned']} compte(s) créé(s) dans Nextcloud)";
+        }
         if ($results['skipped'] > 0) {
-            $message .= ", {$results['skipped']} ignoré(s)";
+            $message .= ", {$results['skipped']} ignoré(s) : présents dans l'AD mais introuvables "
+                . "côté Nextcloud — vérifiez que l'app user_ldap est activée et que sa configuration "
+                . "est bien celle écrite par SynoLDAP (occ ldap:show-config)";
         }
         if (!empty($results['errors'])) {
             $message .= ", " . count($results['errors']) . " erreur(s)";
