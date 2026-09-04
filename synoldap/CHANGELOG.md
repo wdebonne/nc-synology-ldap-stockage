@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.4.1] - 2026-09-04
+
+### Corrigé
+
+- **Erreur 500 sur la page de réglages avec Nextcloud 34** : le gabarit d'administration
+  appelait encore `\OC::$server->getURLGenerator()`, retiré du conteneur hérité dans les
+  versions récentes de Nextcloud. Le rendu de la page échouait donc dès la balise `<img>`
+  du logo, avant tout le reste du formulaire. Remplacé par la fonction de gabarit publique
+  `image_path()`, échappée par `p()`.
+
+---
+
 ## [3.4.0] - 2026-09-04
 
 ### Ajouté

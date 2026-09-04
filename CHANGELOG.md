@@ -7,6 +7,21 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [3.4.1] — 2026-09-04
+
+### Corrigé — Erreur 500 sur la page de réglages (Nextcloud 34)
+
+Ouvrir **Administration → Synology LDAP** renvoyait « Erreur interne du serveur » : le gabarit
+`templates/admin.php` appelait `\OC::$server->getURLGenerator()`, méthode du conteneur hérité
+retirée des versions récentes de Nextcloud. Le rendu s'interrompait sur la balise `<img>` du
+logo — d'où la page d'erreur injectée dans l'attribut `src`, visible dans l'onglet réseau sous
+la forme d'une requête vers `/settings/admin/%3C!DOCTYPE%20html%3E…`.
+
+Remplacé par la fonction de gabarit publique `image_path()`, échappée par `p()`. C'était le
+dernier appel à une API privée `\OC\…` de l'application.
+
+---
+
 ## [3.4.0] — 2026-09-04
 
 ### Ajouté — Transport « SMB, identifiants de l'utilisateur »

@@ -7,7 +7,7 @@ style('synoldap', 'admin');
 
 <div id="synoldap-admin">
     <div class="synoldap-header">
-        <img src="<?= \OC::$server->getURLGenerator()->imagePath('synoldap', 'app.svg') ?>" alt="" class="synoldap-logo" />
+        <img src="<?php p(image_path('synoldap', 'app.svg')); ?>" alt="" class="synoldap-logo" />
         <div>
             <h2>Synology LDAP Manager</h2>
             <p>Gestion automatique des groupes Active Directory Synology et du stockage externe</p>
