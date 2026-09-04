@@ -151,6 +151,17 @@ class LdapService {
      * Construit le filtre LDAP pour rechercher un utilisateur par son nom de connexion.
      * Gère les trois formats courants : sAMAccountName, DOMAIN\user, et UPN (user@domain).
      */
+    /**
+     * Restreint une recherche aux comptes de personnes.
+     *
+     * Active Directory range les comptes machine dans la même objectClass « user » ;
+     * objectCategory=person les écarte. Sans effet sur un annuaire POSIX/OpenLDAP,
+     * où la classe d'objet est déjà spécifique (inetOrgPerson, posixAccount…).
+     */
+    private function personFilter(string $userObjClass): string {
+        return strcasecmp($userObjClass, 'user') === 0 ? '(objectCategory=person)' : '';
+    }
+
     private function buildUserSearchFilter(string $login, string $attr): string {
         $escaped = ldap_escape($login, '', LDAP_ESCAPE_FILTER);
 
@@ -435,9 +446,14 @@ class LdapService {
             return [];
         }
 
+        // Sur Active Directory, les comptes machine portent aussi objectClass=user :
+        // sans objectCategory=person, une base DN à la racine du domaine ferait remonter
+        // les postes et les contrôleurs de domaine comme des utilisateurs.
+        $person = $this->personFilter($userObjClass);
+
         // Exclure les comptes désactivés (userAccountControl bit 2)
-        $strictFilter   = "(&(objectClass={$userObjClass})(!(userAccountControl:1.2.840.113556.1.4.803:=2)))";
-        $fallbackFilter = "(objectClass={$userObjClass})";
+        $strictFilter   = "(&(objectClass={$userObjClass}){$person}(!(userAccountControl:1.2.840.113556.1.4.803:=2)))";
+        $fallbackFilter = "(&(objectClass={$userObjClass}){$person})";
 
         if (!empty($search)) {
             $esc = ldap_escape($search, '', LDAP_ESCAPE_FILTER);

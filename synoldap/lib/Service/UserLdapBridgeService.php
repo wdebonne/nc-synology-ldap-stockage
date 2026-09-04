@@ -92,14 +92,20 @@ class UserLdapBridgeService {
         // ── Filtres utilisateurs ──────────────────────────────────────────────
         $oc   = $c['user_object_class']; // 'user' pour Synology AD
         $attr = $c['user_attr'];         // 'sAMAccountName'
-        $this->set($a, $p . 'ldap_userlist_filter',      "(objectClass={$oc})");
+
+        // Sur AD, les comptes machine partagent objectClass=user : objectCategory=person
+        // évite que les postes et contrôleurs de domaine soient créés comme utilisateurs
+        // lorsque la base DN couvre toute la racine du domaine.
+        $person = strcasecmp($oc, 'user') === 0 ? '(objectCategory=person)' : '';
+
+        $this->set($a, $p . 'ldap_userlist_filter',      "(&(objectClass={$oc}){$person})");
         $this->set($a, $p . 'ldap_userfilter_objectclass', $oc);
         $this->set($a, $p . 'ldap_user_filter_mode',     '1');
         $this->set($a, $p . 'ldap_display_name',         'displayName');
         $this->set($a, $p . 'ldap_email_attr',           'mail');
 
         // ── Filtre de connexion (login) ───────────────────────────────────────
-        $this->set($a, $p . 'ldap_login_filter',         "(&(objectClass={$oc})({$attr}=%uid))");
+        $this->set($a, $p . 'ldap_login_filter',         "(&(objectClass={$oc}){$person}({$attr}=%uid))");
         $this->set($a, $p . 'ldap_login_filter_mode',    '0');
         $this->set($a, $p . 'ldap_login_filter_username','1');
         $this->set($a, $p . 'ldap_login_filter_email',   '0');

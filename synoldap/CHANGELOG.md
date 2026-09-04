@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.4.4] - 2026-09-04
+
+### Corrigé
+
+- **Comptes machine listés comme utilisateurs** : sur Active Directory, les postes de travail
+  et les contrôleurs de domaine portent eux aussi `objectClass=user`. Avec une base DN placée
+  à la racine du domaine — nécessaire quand les comptes sont répartis dans des OU — ils
+  remontaient comme des utilisateurs Nextcloud. Les filtres d'énumération et de connexion
+  incluent désormais `(objectCategory=person)`, y compris ceux écrits dans la configuration
+  de `user_ldap`. Sans effet sur un annuaire POSIX/OpenLDAP, dont la classe d'objet est déjà
+  spécifique.
+
+---
+
 ## [3.4.3] - 2026-09-04
 
 ### Ajouté

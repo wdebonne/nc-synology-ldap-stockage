@@ -7,6 +7,22 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [3.4.4] — 2026-09-04
+
+### Corrigé — Comptes machine remontés comme utilisateurs
+
+Active Directory range les comptes d'ordinateurs dans la même `objectClass=user` que les
+personnes. Dès que la base DN couvre la racine du domaine — cas de figure obligatoire lorsque
+les comptes sont répartis dans des unités d'organisation — les postes de travail et les
+contrôleurs de domaine étaient énumérés comme des utilisateurs Nextcloud.
+
+`(objectCategory=person)` est désormais ajouté aux filtres d'énumération et de connexion de
+`LdapService`, ainsi qu'aux filtres `ldap_userlist_filter` et `ldap_login_filter` écrits dans
+la configuration de `user_ldap`. Le filtre n'est appliqué que lorsque la classe d'objet est
+`user` : un annuaire POSIX/OpenLDAP, dont la classe est déjà spécifique, n'est pas affecté.
+
+---
+
 ## [3.4.3] — 2026-09-04
 
 ### Ajouté — Diagnostic des erreurs de connexion LDAP
