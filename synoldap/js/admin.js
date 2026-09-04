@@ -126,6 +126,25 @@
         document.getElementById('local-block').style.display = isLocal ? '' : 'none';
     }
 
+    /**
+     * État de l'app user_ldap, qui assure l'authentification des comptes AD.
+     * Sans elle activée, aucun utilisateur n'est créé dans Nextcloud : le signaler
+     * évite de chercher longtemps du côté de la configuration LDAP.
+     */
+    async function loadUserLdapStatus() {
+        const box = document.getElementById('user-ldap-status');
+        try {
+            const res = await apiFetch('/admin/user-ldap-status');
+            const ok  = res.available && res.configured;
+            box.className = 'synoldap-status synoldap-status-'
+                + (res.available ? (ok ? 'success' : 'warning') : 'error');
+            box.textContent = (ok ? '✓ ' : '⚠️ ') + (res.message || '');
+            box.style.display = ok ? 'none' : 'block';
+        } catch (e) {
+            box.style.display = 'none';
+        }
+    }
+
     async function loadConfig() {
         try {
             const data = await apiFetch('/admin/config');
@@ -469,6 +488,7 @@
             const res = await apiFetch('/admin/config', 'POST', collectPayload());
             showStatus(res.message || 'Configuration sauvegardée.', 'success');
             showLog(res.message, 'success');
+            loadUserLdapStatus();
         } catch (e) {
             showStatus('Erreur lors de la sauvegarde : ' + e.message, 'error');
             showLog('Erreur sauvegarde : ' + e.message, 'error');
@@ -1006,6 +1026,7 @@
         initSectionToggles();
         initSectionEnableToggles();
         loadConfig();
+        loadUserLdapStatus();
 
         document.getElementById('storage_backend').addEventListener('change', refreshBackendBlocks);
 

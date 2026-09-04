@@ -1,5 +1,24 @@
 # Changelog
 
+## [3.4.6] - 2026-09-04
+
+### Corrigé
+
+- **App `user_ldap` désactivée signalée comme disponible** : la détection s'appuyait sur
+  `installed_version`, qui subsiste dans `oc_appconfig` après une désactivation. Elle repose
+  désormais sur la présence effective des classes de l'app, qui ne sont chargées que si
+  celle-ci est activée.
+
+### Ajouté
+
+- **Bandeau d'état `user_ldap`** en tête de la section 1 : l'interface affiche enfin le
+  résultat de `/admin/user-ldap-status`, qui existait côté serveur mais n'était utilisé nulle
+  part. Le bandeau distingue « app désactivée », « configuration non reprise » et l'état
+  correct, avec la commande `occ app:enable user_ldap` en cas de besoin. Sans cette app,
+  aucun compte n'est créé dans Nextcloud et la synchronisation reste sans effet.
+
+---
+
 ## [3.4.5] - 2026-09-04
 
 ### Modifié

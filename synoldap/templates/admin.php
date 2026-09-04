@@ -28,6 +28,9 @@ style('synoldap', 'admin');
             <span class="synoldap-toggle-icon">▼</span>
         </div>
         <div class="synoldap-card-body" id="ldap-section">
+
+            <div id="user-ldap-status" class="synoldap-status" style="display:none"></div>
+
             <div class="synoldap-form-grid">
                 <div class="synoldap-field">
                     <label for="ldap_host">Serveur LDAP (IP ou nom d'hôte)</label>

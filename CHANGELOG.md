@@ -7,6 +7,28 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [3.4.6] — 2026-09-04
+
+### Corrigé — Détection de l'app `user_ldap`
+
+`isUserLdapEnabled()` testait la présence de `installed_version` dans `oc_appconfig` : cette
+clé subsistant après une désactivation, une app désactivée était considérée comme disponible.
+La détection repose désormais sur la chargeabilité des classes de `user_ldap`, qui n'est
+effective que lorsque l'app est activée.
+
+### Ajouté — Bandeau d'état en tête de la section LDAP
+
+La route `/admin/user-ldap-status` existait depuis la 3.2 mais n'était affichée nulle part.
+L'interface la consulte maintenant au chargement et après chaque sauvegarde, et affiche un
+bandeau lorsque quelque chose cloche : app installée mais désactivée (avec la commande
+`occ app:enable user_ldap`), ou configuration LDAP non reprise par `user_ldap`.
+
+C'est un symptôme silencieux qui coûte cher : sans `user_ldap` activée, aucun compte n'est
+créé dans Nextcloud, la liste des utilisateurs reste vide et la synchronisation globale
+n'a rien à traiter — alors que la connexion à l'annuaire, elle, fonctionne parfaitement.
+
+---
+
 ## [3.4.5] — 2026-09-04
 
 ### Modifié — La synchronisation globale crée les comptes manquants

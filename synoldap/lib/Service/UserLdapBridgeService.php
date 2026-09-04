@@ -28,17 +28,18 @@ class UserLdapBridgeService {
     ) {}
 
     public function isUserLdapAvailable(): bool {
-        // Vérifie si user_ldap est installé et activé dans NC
-        $apps = $this->config->getSystemValue('apps_paths', []);
-        // Approche plus simple : vérifier si la classe est chargeable
-        return class_exists('\OCA\User_LDAP\Helper') || $this->isUserLdapEnabled();
+        return $this->isUserLdapEnabled();
     }
 
+    /**
+     * user_ldap est-elle réellement **activée** ?
+     *
+     * `installed_version` subsiste dans oc_appconfig après une désactivation : s'y fier
+     * ferait passer une app désactivée pour disponible. Les classes d'une app désactivée,
+     * elles, ne sont pas chargeables — c'est le signal fiable.
+     */
     private function isUserLdapEnabled(): bool {
-        $enabled = $this->config->getAppValue('core', 'installedversion', '');
-        // Vérifier via oc_appconfig si user_ldap est listé comme activé
-        $ulVersion = $this->config->getAppValue('user_ldap', 'installed_version', '');
-        return !empty($ulVersion);
+        return class_exists('\OCA\User_LDAP\Helper');
     }
 
     /**
@@ -162,7 +163,18 @@ class UserLdapBridgeService {
     public function getStatus(): array {
         $ulEnabled = $this->isUserLdapEnabled();
         if (!$ulEnabled) {
-            return ['available' => false, 'message' => "App user_ldap non installée ou désactivée.\nActivez-la via Administration → Applications."];
+            $installed = $this->config->getAppValue('user_ldap', 'installed_version', '');
+            return [
+                'available'  => false,
+                'configured' => false,
+                'message'    => $installed !== ''
+                    ? "L'app user_ldap (version {$installed}) est installée mais désactivée — "
+                        . "elle assure l'authentification des comptes AD. "
+                        . 'Activez-la : Administration → Applications, ou '
+                        . '« occ app:enable user_ldap ».'
+                    : "L'app user_ldap n'est pas installée — elle assure l'authentification "
+                        . 'des comptes AD. Installez-la depuis Administration → Applications.',
+            ];
         }
 
         $host   = $this->config->getAppValue(self::APP_ID, 'ldap_host', '');
