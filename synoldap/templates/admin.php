@@ -181,7 +181,12 @@ style('synoldap', 'admin');
                 <div class="synoldap-field">
                     <label for="synology_smb_domain">Domaine / Workgroup</label>
                     <input type="text" id="synology_smb_domain" name="synology_smb_domain"
-                           placeholder="WORKGROUP" />
+                           placeholder="PAVILLY" />
+                    <span class="synoldap-hint">
+                        Nom NetBIOS du domaine AD (ex. <code>PAVILLY</code>), et non
+                        <code>WORKGROUP</code> : avec le transport « identifiants de l'utilisateur »,
+                        c'est lui qui qualifie le compte envoyé au NAS.
+                    </span>
                 </div>
                 <div class="synoldap-field">
                     <label for="smb_user_auth">Identifiants utilisateur — conservation</label>

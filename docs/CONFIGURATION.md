@@ -53,6 +53,17 @@ n'importe quelle profondeur — y compris depuis les applications mobiles et tab
 Configuration type : une seule ligne **Commun**, type **SMB user**, partage `Users`,
 point de montage `Users`. Aucune ligne ACL n'est nécessaire pour ce partage.
 
+Les utilisateurs n'ont **rien à saisir** : Nextcloud capture leurs identifiants AD au moment
+de la connexion et les transmet au NAS. Aucun réglage personnel, aucune invite de saisie.
+
+Deux points conditionnent ce fonctionnement transparent :
+
+- le champ **Domaine / Workgroup** doit contenir le nom NetBIOS du domaine (`PAVILLY`), car
+  c'est le **nom de connexion Nextcloud** qui est envoyé au NAS et il doit être qualifié ;
+- tout le monde doit se connecter avec le même format d'identifiant (le `sAMAccountName`
+  simple, ex. `jdupont`) : une connexion avec `DOMAINE\utilisateur` ou une adresse mail
+  transmet cette forme telle quelle au Synology.
+
 | Champ | Effet |
 |-------|-------|
 | Identifiants utilisateur — conservation : **En session** | Aucun mot de passe stocké côté serveur |
