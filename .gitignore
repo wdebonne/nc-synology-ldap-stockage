@@ -6,6 +6,9 @@ vendor/
 
 # Source de référence locale uniquement — non publiée
 user_ldap/
+
+# Documentation d'exploitation propre à l'instance (IP, DN, comptes, captures)
+docs-local/
 node_modules/
 *.log
 .DS_Store
