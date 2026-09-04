@@ -35,6 +35,10 @@ class AdminController extends Controller {
         'ldap_membership_mode',
         'admin_ldap_group',
         'synology_host',
+        // Transport des fichiers : SMB ou local/NFS
+        'storage_backend',
+        'local_root',
+        'mount_enable_sharing',
         'synology_smb_user',
         'synology_smb_domain',
         // API DSM
@@ -165,6 +169,48 @@ class AdminController extends Controller {
     #[AdminRequired]
     public function testDsmApi(): JSONResponse {
         return new JSONResponse($this->synoApiService->testConnection());
+    }
+
+    /**
+     * Détecte le domaine AD (RootDSE) et propose les base DN correspondantes.
+     *
+     * @AdminRequired
+     */
+    #[AdminRequired]
+    public function detectAd(): JSONResponse {
+        try {
+            return new JSONResponse($this->ldapService->detectDirectory());
+        } catch (\Throwable $e) {
+            return new JSONResponse(['success' => false, 'message' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Liste les partages du NAS (auto-complétion du champ « Partage »).
+     *
+     * @AdminRequired
+     * @NoCSRFRequired
+     */
+    #[AdminRequired]
+    #[NoCSRFRequired]
+    public function listShares(): JSONResponse {
+        try {
+            return new JSONResponse(['success' => true, 'shares' => $this->synoApiService->listShares()]);
+        } catch (\Throwable $e) {
+            return new JSONResponse(['success' => false, 'message' => $e->getMessage(), 'shares' => []]);
+        }
+    }
+
+    /**
+     * Vérifie que la racine NFS est visible depuis le conteneur Nextcloud
+     * et liste ce qu'elle contient.
+     *
+     * @AdminRequired
+     */
+    #[AdminRequired]
+    public function testLocal(): JSONResponse {
+        $sub = trim((string) $this->request->getParam('share', ''));
+        return new JSONResponse($this->storageConfigService->testLocalRoot($sub));
     }
 
     /**
@@ -633,6 +679,8 @@ class AdminController extends Controller {
             'synology_smb_domain'    => 'WORKGROUP',
             'synology_api_port'      => '5000',
             'synology_api_ssl'       => '0',
+            'storage_backend'        => 'smb',
+            'mount_enable_sharing'   => '1',
             default                  => '',
         };
     }

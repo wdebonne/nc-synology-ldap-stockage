@@ -33,11 +33,29 @@ class GroupSyncService {
         return $this->config->getAppValue(self::APP_ID, 'admin_ldap_group', 'ADMIN_NEXTCLOUD');
     }
 
-    /** Retourne les entrées auto (mode nom ou ACL) depuis la configuration. */
+    /** Retourne les entrées non manuelles (mode nom, ACL ou commun). */
     private function getAutoEntries(): array {
         $entries = [];
         foreach ($this->getMappings() as $m) {
-            if (!empty($m['auto_mode']) && !empty($m['storage_share'])) {
+            $mode = StorageConfigService::modeOf($m);
+            if ($mode === 'manual') {
+                continue;
+            }
+
+            if ($mode === 'all') {
+                // Partage commun : il suffit d'un point de montage déductible.
+                if (!empty($m['storage_share']) || !empty($m['storage_subfolder']) || !empty($m['mount_point'])) {
+                    $entries[] = $m;
+                }
+                continue;
+            }
+
+            // En transport local (NFS), un partage vide est admis pour le mode nom :
+            // les dossiers sont cherchés directement sous la racine locale.
+            $localName = $mode === 'name'
+                && $this->storageConfigService->typeOf($m) === StorageConfigService::TYPE_LOCAL;
+
+            if (!empty($m['storage_share']) || $localName) {
                 $entries[] = $m;
             }
         }
@@ -280,14 +298,26 @@ class GroupSyncService {
         }
 
         foreach ($autoEntries as $entry) {
-            $rootShare = trim($entry['storage_share'] ?? '');
-            $prefix    = trim($entry['mount_prefix'] ?? '');
-            $isAcl     = ($entry['auto_mode'] === 'acl');
+            $rootShare = trim((string) ($entry['storage_share'] ?? ''));
+            $prefix    = trim((string) ($entry['mount_prefix'] ?? ''));
+            $type      = trim((string) ($entry['storage_type'] ?? ''));
+            $mode      = StorageConfigService::modeOf($entry);
 
-            if ($isAcl) {
-                $this->syncAclEntry($user, $ldapGroups, $rootShare, $prefix, $manualNcGroups);
+            if ($mode === 'all') {
+                // Partage commun : identique pour tout le monde, aucun groupe requis.
+                $sub        = trim((string) ($entry['storage_subfolder'] ?? ''), '/');
+                $mountPoint = trim((string) ($entry['mount_point'] ?? ''), '/');
+                if ($mountPoint === '') {
+                    $mountPoint = $sub !== '' ? $sub : $rootShare;
+                }
+                $this->storageConfigService->ensureCommonMount($rootShare, $sub, $mountPoint, $type);
+                continue;
+            }
+
+            if ($mode === 'acl') {
+                $this->syncAclEntry($user, $ldapGroups, $rootShare, $prefix, $manualNcGroups, $type);
             } else {
-                $this->syncNameEntry($user, $ldapGroups, $rootShare, $prefix, $manualNcGroups);
+                $this->syncNameEntry($user, $ldapGroups, $rootShare, $prefix, $manualNcGroups, $type);
             }
         }
     }
@@ -296,7 +326,7 @@ class GroupSyncService {
      * Mode ACL : interroge Synology pour savoir quels dossiers l'utilisateur peut voir.
      * Aurélie (groupe Responsable) → ACL Compta contient Responsable → montage /NAS/Compta.
      */
-    private function syncAclEntry(IUser $user, array $ldapGroups, string $rootShare, string $prefix, array $manualNcGroups): void {
+    private function syncAclEntry(IUser $user, array $ldapGroups, string $rootShare, string $prefix, array $manualNcGroups, string $type = ''): void {
         try {
             $aclMappings = $this->synoApiService->discoverAclMappings($rootShare);
         } catch (\Throwable $e) {
@@ -315,7 +345,7 @@ class GroupSyncService {
 
                 $ncGroup = $this->ensureNcGroupMember($user, $ldapGroup);
                 $mountGid = $ncGroup ? $ncGroup->getGID() : $ldapGroup;
-                $this->storageConfigService->ensureGroupMount($mountGid, $rootShare, $folderName, $prefix);
+                $this->storageConfigService->ensureGroupMount($mountGid, $rootShare, $folderName, $prefix, $type);
                 break; // un seul montage par dossier même si plusieurs groupes de l'user y ont accès
             }
         }
@@ -324,7 +354,7 @@ class GroupSyncService {
     /**
      * Mode nom : nom du groupe AD = nom du sous-dossier sur Synology.
      */
-    private function syncNameEntry(IUser $user, array $ldapGroups, string $rootShare, string $prefix, array $manualNcGroups): void {
+    private function syncNameEntry(IUser $user, array $ldapGroups, string $rootShare, string $prefix, array $manualNcGroups, string $type = ''): void {
         foreach ($ldapGroups as $ldapGroup) {
             if (in_array($ldapGroup, ['admin', 'disabled'], true)) {
                 continue;
@@ -335,7 +365,7 @@ class GroupSyncService {
 
             $ncGroup = $this->ensureNcGroupMember($user, $ldapGroup);
             $mountGid = $ncGroup ? $ncGroup->getGID() : $ldapGroup;
-            $this->storageConfigService->ensureGroupMount($mountGid, $rootShare, $ldapGroup, $prefix);
+            $this->storageConfigService->ensureGroupMount($mountGid, $rootShare, $ldapGroup, $prefix, $type);
         }
     }
 

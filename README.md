@@ -1,11 +1,11 @@
 # nc-synology-ldap-stockage
 
-**Application Nextcloud** pour l'intégration complète de l'Active Directory Synology : authentification, groupes, ACL et stockage externe SMB — sans app tierce.
+**Application Nextcloud** pour l'intégration complète de l'Active Directory Synology : authentification, groupes, ACL et stockage externe SMB ou NFS — sans app tierce.
 
-[![Nextcloud](https://img.shields.io/badge/Nextcloud-25--33-0082c9?logo=nextcloud)](https://nextcloud.com)
+[![Nextcloud](https://img.shields.io/badge/Nextcloud-25--34-0082c9?logo=nextcloud)](https://nextcloud.com)
 [![PHP](https://img.shields.io/badge/PHP-8.1%2B-777bb4?logo=php)](https://php.net)
 [![Licence](https://img.shields.io/badge/Licence-AGPL--3.0-green)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-3.2.5-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/Version-3.3.0-blue)](CHANGELOG.md)
 
 ---
 
@@ -15,6 +15,14 @@
 - **Backend d'authentification intégré** — les utilisateurs se connectent avec leurs identifiants Windows (sAMAccountName + mot de passe AD), sans app `user_ldap` externe
 - **Provisionnement automatique** — le compte Nextcloud est créé à la première connexion, avec le nom complet récupéré depuis l'AD
 - **Source unique de vérité** — désactiver un compte sur Synology = l'accès Nextcloud est immédiatement révoqué
+
+### Transport — SMB ou NFS (nouveau v3.3)
+| Transport | Quand l'utiliser |
+|-----------|------------------|
+| **SMB / CIFS** | Nextcloud se connecte directement au NAS ; nécessite l'extension PHP `smbclient` et un compte de service SMB |
+| **NFS / local** ★ | Le NAS est déjà monté sur l'hôte Docker en NFSv4 et exposé au conteneur : Nextcloud lit les fichiers en local, sans compte SMB ni `smbclient` |
+
+Le transport se choisit globalement et peut être forcé ligne par ligne (colonne **Type**).
 
 ### Gestion des groupes
 - **Synchronisation automatique** des groupes AD → groupes Nextcloud à chaque connexion
@@ -27,6 +35,7 @@
 | **Manuel** | Mapping explicite : groupe AD → partage SMB précis |
 | **Auto par nom** | Sous-dossier = nom du groupe (ex : groupe `Compta` → `//NAS/Externe/Compta`) |
 | **Auto par ACL** ★ | Lit les ACL Synology via l'API DSM → chaque utilisateur voit exactement les dossiers auxquels ses groupes AD donnent accès, identique à un lecteur réseau Windows |
+| **Commun** (v3.3) | Un dossier monté pour **tous** les utilisateurs — le dossier partagé entre tous les services |
 
 ### Arborescence identique Windows / Nextcloud
 Avec le champ **Préfixe de montage** (ex : `NAS`), les dossiers apparaissent dans Nextcloud sous `/NAS/Compta/2026` — même chemin que le lecteur réseau sur le PC Windows.

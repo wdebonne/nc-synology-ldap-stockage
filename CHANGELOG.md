@@ -7,6 +7,67 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [3.3.0] — 2026-09-04
+
+### Ajouté — Transport NFS / local
+
+Quand le NAS est déjà monté sur l'hôte en **NFSv4** (Docker / Portainer / Nextcloud AIO), les
+montages Nextcloud utilisent le backend `local` de `files_external` au lieu de passer par SMB :
+plus rapide, aucun compte SMB à gérer, extension `smbclient` inutile.
+
+- Champ **Racine locale** (`local_root`, ex. `/mnt/nas`) : le partage `User` est lu dans
+  `/mnt/nas/User`, le sous-dossier `Compta` dans `/mnt/nas/User/Compta`
+- **Transport par défaut** (`storage_backend`) surchargeable ligne par ligne via la colonne **Type**
+- Bouton **« Vérifier le chemin local »** (`POST /admin/test-local`) : existence du chemin dans le
+  conteneur, droits de `www-data` (uid 33), liste des dossiers — diagnostic de `NEXTCLOUD_MOUNT`
+- Un montage existant qui change de transport (SMB → NFS) est **converti sur place** : backend,
+  mécanisme d'authentification et options réappliqués, point de montage et partages conservés
+- Le mode ACL continue d'interroger l'API DSM quel que soit le transport : les droits viennent
+  toujours du Synology, y compris quand les fichiers sont lus en NFS
+
+### Ajouté — Mode « Commun »
+
+Quatrième mode de correspondance (`auto_mode = 'all'`) : un dossier monté pour **tous** les
+utilisateurs, sans groupe ni utilisateur applicable — le dossier partagé entre tous les services.
+Combinable avec le mode ACL : `/User/Commun` pour tout le monde, `/User/Compta` réservé au
+groupe `Compta`.
+
+### Ajouté — Détection automatique de l'Active Directory
+
+- Bouton **« Détecter le domaine automatiquement »** (`POST /admin/detect-ad`) : lit le RootDSE du
+  contrôleur de domaine (`defaultNamingContext`, `dnsHostName`) et remplit les base DN
+  utilisateurs/groupes, l'attribut UID et le mode d'appartenance
+- Avec le compte de service, les **conteneurs réels** des utilisateurs et des groupes sont déduits
+  (suffixe DN commun) au lieu du `CN=Users` par défaut
+- Bouton **« Lister les partages du NAS »** (`GET /admin/shares`) : auto-complétion du champ
+  *Partage* ; un clic sur un partage crée une ligne « Auto ACL » préconfigurée
+
+### Ajouté — Interface
+
+- Colonne **Type** (Défaut / SMB / NFS) et mode **Commun (tous)** dans le tableau des correspondances
+- Option **« Autoriser le partage Nextcloud des fichiers montés »** (`enable_sharing`) : nécessaire
+  pour partager un document du NAS entre services depuis Nextcloud
+- Les nouvelles actions enregistrent la configuration avant de tester
+
+### Modifié
+
+- **Compatibilité Nextcloud 34** (Hub 26) : `max-version` passé de 33 à 34
+- `StorageConfigService` : transports unifiés (`resolveBackend()`, `buildStorageOptions()`),
+  montages communs (`ensureCommonMount()`), diagnostic local (`testLocalRoot()`)
+- Options de montage posées explicitement : `enable_sharing`, `previews` et
+  `filesystem_check_changes = 1` (relecture du dossier à chaque accès direct, indispensable
+  quand les fichiers sont modifiés hors Nextcloud)
+- Le garde anti-écriture de la v2.0.34 (erreurs 401 sur NC 33) est conservé et étendu au backend
+  et aux options de montage
+- `\OC::$server->get()` remplacé par `\OCP\Server::get()` (API publique)
+
+### Corrigé
+
+- Mode manuel : un champ *Groupe Nextcloud* laissé vide reprend le nom du groupe AD lors de
+  l'application des montages
+
+---
+
 ## [3.2.14] — 2026-06-04
 
 ### Fix — SYNO.Core.ACL code 101 : structure requête JSON

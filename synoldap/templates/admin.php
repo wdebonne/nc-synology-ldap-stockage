@@ -57,6 +57,18 @@ style('synoldap', 'admin');
                            placeholder="(inchangé si vide)" autocomplete="new-password" />
                 </div>
             </div>
+            <div class="synoldap-actions">
+                <button id="btn-detect-ad" class="synoldap-btn synoldap-btn-secondary">
+                    🧭 Détecter le domaine automatiquement
+                </button>
+                <span id="detect-ad-result" class="synoldap-inline-result"></span>
+            </div>
+            <p class="synoldap-hint">
+                Lit le RootDSE du contrôleur de domaine et remplit les base DN ci-dessous
+                (ex : <code>DC=pavilly,DC=int</code>). Renseignez d'abord l'hôte et, si possible,
+                le compte de service.
+            </p>
+
             <hr class="synoldap-separator" />
             <div class="synoldap-form-grid">
                 <div class="synoldap-field synoldap-field-wide">
@@ -113,13 +125,58 @@ style('synoldap', 'admin');
         </div>
         <div class="synoldap-card-body" id="storage-section">
 
-            <p class="synoldap-section-label">Accès SMB (montage des dossiers)</p>
             <div class="synoldap-form-grid">
                 <div class="synoldap-field">
                     <label for="synology_host">Hôte du Synology (IP ou nom)</label>
                     <input type="text" id="synology_host" name="synology_host"
                            placeholder="192.168.1.50" />
                 </div>
+                <div class="synoldap-field">
+                    <label for="storage_backend">Transport par défaut</label>
+                    <select id="storage_backend" name="storage_backend">
+                        <option value="smb">SMB / CIFS — Nextcloud se connecte au NAS</option>
+                        <option value="local">NFS / local — partage déjà monté dans le conteneur</option>
+                    </select>
+                    <span class="synoldap-hint">Modifiable ligne par ligne (colonne Type)</span>
+                </div>
+                <div class="synoldap-field synoldap-field-checkbox">
+                    <label>
+                        <input type="checkbox" id="mount_enable_sharing" name="mount_enable_sharing" value="1" />
+                        Autoriser le partage Nextcloud des fichiers montés
+                    </label>
+                    <span class="synoldap-hint">Nécessaire pour partager un document du NAS entre services</span>
+                </div>
+            </div>
+
+            <!-- Transport local (NFS) -->
+            <div id="local-block">
+                <p class="synoldap-section-label">Montage NFS (transport « local »)</p>
+                <div class="synoldap-form-grid">
+                    <div class="synoldap-field synoldap-field-wide">
+                        <label for="local_root">Racine locale dans le conteneur Nextcloud</label>
+                        <input type="text" id="local_root" name="local_root" placeholder="/mnt/nas" />
+                        <span class="synoldap-hint">
+                            Chemin où le NAS est monté en NFSv4 côté hôte puis exposé au conteneur.
+                            Le partage <code>User</code> sera lu dans <code>/mnt/nas/User</code>.
+                            Sur Nextcloud AIO : variable <code>NEXTCLOUD_MOUNT=/mnt/</code> sur le mastercontainer.
+                        </span>
+                    </div>
+                </div>
+                <div class="synoldap-actions">
+                    <button id="btn-test-local" class="synoldap-btn synoldap-btn-secondary">
+                        📂 Vérifier le chemin local
+                    </button>
+                    <span id="local-test-result" class="synoldap-inline-result"></span>
+                </div>
+                <div id="local-folders" class="synoldap-groups-preview" style="display:none">
+                    <strong>Dossiers visibles :</strong>
+                    <div id="local-folders-list" class="synoldap-tag-list"></div>
+                </div>
+                <hr class="synoldap-separator" />
+            </div>
+
+            <p class="synoldap-section-label">Accès SMB (montage des dossiers)</p>
+            <div class="synoldap-form-grid">
                 <div class="synoldap-field">
                     <label for="synology_smb_domain">Domaine / Workgroup</label>
                     <input type="text" id="synology_smb_domain" name="synology_smb_domain"
@@ -196,7 +253,14 @@ style('synoldap', 'admin');
                 <button id="btn-test-dsm-api" class="synoldap-btn synoldap-btn-secondary">
                     🔑 Tester l'API DSM
                 </button>
+                <button id="btn-list-shares" class="synoldap-btn synoldap-btn-secondary">
+                    📚 Lister les partages du NAS
+                </button>
                 <span id="dsm-api-test-result" class="synoldap-inline-result"></span>
+            </div>
+            <div id="shares-preview" class="synoldap-groups-preview" style="display:none">
+                <strong>Partages disponibles :</strong>
+                <div id="shares-list" class="synoldap-tag-list"></div>
             </div>
         </div>
     </div>
@@ -248,10 +312,11 @@ style('synoldap', 'admin');
                 <table class="synoldap-table" id="mappings-table">
                     <thead>
                         <tr>
-                            <th class="col-auto" title="Mode : manuel, auto par nom, ou auto par ACL Synology">Mode</th>
+                            <th class="col-auto" title="Manuel, auto par nom, auto par ACL Synology, ou commun à tous">Mode</th>
+                            <th title="Transport : SMB ou NFS/local">Type</th>
                             <th class="col-manual">Groupe AD (LDAP)</th>
                             <th class="col-manual">Groupe NC <span class="synoldap-optional">ou</span> Utilisateur NC</th>
-                            <th>Partage SMB</th>
+                            <th>Partage</th>
                             <th class="col-manual">Sous-dossier <span class="synoldap-optional">(opt.)</span></th>
                             <th class="col-manual">Point de montage</th>
                             <th class="col-auto-extra">Préfixe NC <span class="synoldap-optional">(opt.)</span></th>
@@ -264,6 +329,8 @@ style('synoldap', 'admin');
                 </table>
             </div>
 
+            <datalist id="synoldap-shares"></datalist>
+
             <button id="btn-add-mapping" class="synoldap-btn synoldap-btn-ghost">
                 ＋ Ajouter une correspondance
             </button>
@@ -273,6 +340,11 @@ style('synoldap', 'admin');
                 Les montages sont créés automatiquement à la connexion de chaque utilisateur selon ses groupes AD.
                 Un <strong>préfixe</strong> (ex. <code>NAS</code>) reproduit la même arborescence que le lecteur réseau Windows :
                 l'utilisateur voit <em>/NAS/Compta/2026</em> dans Nextcloud comme sur son PC.
+                <br>
+                <strong>Exemple type — partage <code>User</code> :</strong> une ligne <strong>Auto ACL</strong>
+                sur le partage <code>User</code> avec le préfixe <code>User</code> — les membres de
+                <code>Compta</code> ne voient que <em>/User/Compta</em> — plus une ligne
+                <strong>Commun</strong> pour le dossier accessible à tous les services.
                 <br>
                 <button id="btn-clear-acl-cache" class="synoldap-btn-link" style="margin-top:6px">
                     🗑️ Vider le cache ACL (forcer la relecture des droits Synology)

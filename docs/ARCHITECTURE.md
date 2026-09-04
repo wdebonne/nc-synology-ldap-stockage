@@ -106,15 +106,40 @@ Le cache utilise `ICacheFactory::createLocal()` (APCu en production, fichier en 
 
 ### Service de montage — `Service/StorageConfigService.php`
 
-Wrapping de l'API `files_external` de Nextcloud (`GlobalStoragesService`).
+Wrapping de l'API `files_external` de Nextcloud (`GlobalStoragesService`), résolue via
+`\OCP\Server::get()` avec garde `class_exists`.
 
-`ensureGroupMount(groupName, rootShare, subfolder, mountPrefix)` :
+Deux transports (v3.3), choisis globalement (`storage_backend`) ou par ligne (`storage_type`) :
+
+| Transport | Backend | Auth | Options |
+|-----------|---------|------|---------|
+| `smb` | `smb` | `password::global` | `host`, `share`, `root`, `domain` |
+| `local` | `local` | `null::null` | `datadir` = `local_root/partage/sous-dossier` |
+
+`resolveBackend()` sélectionne le couple backend/mécanisme, `buildStorageOptions()` construit les
+options et la cible lisible (et signale un chemin local absent du conteneur → statut `warning`).
+
+`ensureGroupMount(groupName, rootShare, subfolder, mountPrefix, type)` :
 - Vérifie si un montage identique existe déjà (pour éviter les doublons)
 - Construit le point de montage : `prefix/subfolder` ou `prefix/groupName` selon le mode
-- Crée ou met à jour le `StorageConfig` avec le backend `smb`, les credentials configurés, et l'applicable_group = `$groupName`
+- Crée ou met à jour le `StorageConfig` avec l'applicable_group = `$groupName`
+
+`ensureCommonMount(rootShare, subfolder, mountPoint, type)` : montage global — `applicableUsers`
+et `applicableGroups` vides = visible par tous les utilisateurs (mode `all`).
+
+`testLocalRoot(subPath)` : diagnostic du transport local (existence du chemin dans le conteneur,
+droits `www-data`, contenu).
+
+Options posées sur chaque montage : `enable_sharing` (configurable), `previews`, et
+`filesystem_check_changes = 1` (relecture à chaque accès direct, pour les fichiers modifiés hors NC).
+
+Sur un montage existant, rien n'est écrit tant que backend, options, authentification et
+`enable_sharing` sont inchangés (garde contre les erreurs 401 de NC 33) ; à l'inverse, un
+changement de transport SMB → NFS réapplique backend et mécanisme sur place.
 
 `applyMounts(mappings)` :
-- Pour les entrées manuelles : crée directement le montage
+- Pour les entrées manuelles (groupe ou utilisateur NC) : crée directement le montage
+- Pour `auto_mode = 'all'` : crée le montage commun
 - Pour `auto_mode = 'name'` : les montages sont créés dynamiquement à la connexion dans `GroupSyncService`
 - Pour `auto_mode = 'acl'` : idem, via `SynologyApiService`
 

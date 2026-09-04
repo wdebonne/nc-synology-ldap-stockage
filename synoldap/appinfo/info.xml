@@ -3,7 +3,7 @@
       xsi:noNamespaceSchemaLocation="https://apps.nextcloud.com/schema/apps/info.xsd">
     <id>synoldap</id>
     <name>Synology LDAP Manager</name>
-    <summary>Synology AD authentication, group sync and SMB storage — based on user_ldap patterns</summary>
+    <summary>Synology AD authentication, group sync and SMB/NFS storage — based on user_ldap patterns</summary>
     <description><![CDATA[
 Full integration of Synology Active Directory into Nextcloud — no external dependency required.
 
@@ -12,12 +12,14 @@ Uses the same architecture as user_ldap (persistent user mapping table) for stab
 **Features v3.0:**
 - Automatic AD group → Nextcloud group sync on each login (via user_ldap)
 - Automatic Nextcloud admin promotion via configurable AD group
-- Three SMB mount modes: manual, auto by group name, auto by Synology ACL
+- Two transports: SMB (smbclient) or Local — for a Synology share already mounted over NFSv4 on the host (Docker / Nextcloud AIO)
+- Four mount modes: manual, auto by group name, auto by Synology ACL, and a common share visible by everyone
+- Active Directory auto-detection: reads the RootDSE and fills in the base DNs
 - ACL mode: reads actual permissions via Synology DSM API — each user sees exactly the folders allowed by their AD groups
 - Identical Windows / Nextcloud folder structure via Mount Prefix field (/NAS/Accounting, etc.)
 - Visual admin interface with real-time ACL preview and SMB configuration
     ]]></description>
-    <version>3.2.16</version>
+    <version>3.3.0</version>
     <licence>agpl</licence>
     <author homepage="https://github.com/wdebonne">wdebonne</author>
     <namespace>SynoLDAP</namespace>
@@ -26,7 +28,7 @@ Uses the same architecture as user_ldap (persistent user mapping table) for stab
     <bugs>https://github.com/wdebonne/nc-synology-ldap-stockage/issues</bugs>
     <repository>https://github.com/wdebonne/nc-synology-ldap-stockage</repository>
     <dependencies>
-        <nextcloud min-version="25" max-version="33"/>
+        <nextcloud min-version="25" max-version="34"/>
         <php min-version="8.1"/>
         <lib>ldap</lib>
     </dependencies>

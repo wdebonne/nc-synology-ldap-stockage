@@ -1,5 +1,52 @@
 # Changelog
 
+## [3.3.0] - 2026-09-04
+
+### Ajouté
+
+- **Transport NFS / local** en plus de SMB : quand le NAS est déjà monté sur l'hôte en NFSv4
+  (Docker, Portainer, Nextcloud AIO), les montages utilisent le backend `local` de
+  `files_external` — plus rapide, sans compte SMB ni extension `smbclient`.
+  Nouveau champ *Racine locale* (ex. `/mnt/nas`) : le partage `User` est lu dans `/mnt/nas/User`.
+- **Transport par ligne** : colonne **Type** (Défaut / SMB / NFS) dans les correspondances.
+- **Bouton « Vérifier le chemin local »** : contrôle depuis le conteneur que le chemin existe,
+  qu'il est lisible/inscriptible par `www-data` (uid 33), et liste les dossiers trouvés —
+  diagnostic des montages NFS et de la variable `NEXTCLOUD_MOUNT` (AIO).
+- **Mode de correspondance « Commun »** : un dossier monté pour **tous** les utilisateurs
+  (sans groupe ni utilisateur applicable), pour le dossier partagé entre tous les services.
+- **Détection automatique du domaine AD** : lecture du RootDSE (`defaultNamingContext`) et
+  remplissage des base DN utilisateurs/groupes. Avec le compte de service, les conteneurs réels
+  sont déduits (suffixe DN commun) au lieu du `CN=Users` par défaut.
+- **Liste des partages du NAS** via l'API DSM (`SYNO.FileStation.List/list_share`) :
+  auto-complétion du champ *Partage* ; un clic sur un partage crée une ligne « Auto ACL »
+  préconfigurée.
+- Option **« Autoriser le partage Nextcloud des fichiers montés »** (`enable_sharing`),
+  nécessaire pour partager un document du NAS entre services depuis Nextcloud.
+- Nouvelles routes : `POST /admin/detect-ad`, `GET /admin/shares`, `POST /admin/test-local`.
+
+### Modifié
+
+- **Compatibilité Nextcloud 34** (Hub 26) : `max-version` passé de 33 à 34.
+- `StorageConfigService` : transports SMB et local unifiés (`resolveBackend()`,
+  `buildStorageOptions()`) ; un montage existant qui change de transport est **converti sur
+  place** (backend et mécanisme d'authentification réappliqués), sans perdre son point de montage.
+- Montages : options `enable_sharing`, `previews` et `filesystem_check_changes = 1` (relecture
+  du dossier à chaque accès direct, indispensable quand les fichiers sont modifiés hors Nextcloud).
+- Le garde anti-écriture inutile de la v2.0.34 (erreurs 401 sur NC 33) est conservé et étendu
+  au backend et aux options de montage : rien n'est écrit dans `oc_external_storages` si la
+  configuration n'a pas changé.
+- `\OC::$server->get()` remplacé par `\OCP\Server::get()` (API publique) dans
+  `StorageConfigService`.
+- Les tests des nouvelles actions (détection AD, chemin local, partages) enregistrent la
+  configuration au préalable : plus de test sur une configuration périmée.
+
+### Corrigé
+
+- Mode manuel : un champ *Groupe Nextcloud* laissé vide reprend correctement le nom du groupe AD
+  lors de l'application des montages.
+
+---
+
 ## [2.0.10] - 2026-06-01
 
 ### Corrections

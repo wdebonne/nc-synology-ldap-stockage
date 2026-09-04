@@ -98,6 +98,64 @@ Teste la connexion LDAP avec les paramètres actuels. Retourne les groupes déte
 
 ---
 
+### POST /admin/detect-ad
+
+Lit le RootDSE du contrôleur de domaine et propose la configuration correspondante.
+
+**Réponse 200 — succès**
+```json
+{
+  "success": true,
+  "authenticated": true,
+  "domain": "pavilly.int",
+  "base_dn": "DC=pavilly,DC=int",
+  "dns_host": "NAS_MAIRIE.pavilly.int",
+  "ldap_user_base_dn": "CN=Users,DC=pavilly,DC=int",
+  "ldap_group_base_dn": "CN=Users,DC=pavilly,DC=int",
+  "ldap_user_attr": "sAMAccountName",
+  "ldap_membership_mode": "memberof"
+}
+```
+
+`authenticated: false` signifie que le RootDSE a été lu anonymement : les base DN proposées
+sont les valeurs par défaut (`CN=Users,<domaine>`) et méritent une vérification.
+
+---
+
+### GET /admin/shares
+
+Liste les partages du NAS visibles par le compte API (`SYNO.FileStation.List/list_share`).
+
+```json
+{
+  "success": true,
+  "shares": [
+    { "name": "User", "path": "/User", "real_path": "/volume1/User" }
+  ]
+}
+```
+
+---
+
+### POST /admin/test-local
+
+Vérifie la racine locale (transport NFS) depuis le conteneur Nextcloud.
+Corps optionnel : `share` — sous-chemin à vérifier sous la racine.
+
+```json
+{
+  "success": true,
+  "message": "« /mnt/nas » accessible — 4 sous-dossier(s), écriture OK",
+  "path": "/mnt/nas",
+  "folders": ["Communication", "GPO$", "Logiciels", "User"]
+}
+```
+
+En cas d'échec, `message` indique la cause probable (chemin absent du conteneur, droits
+insuffisants pour `www-data`, variable `NEXTCLOUD_MOUNT` manquante).
+
+---
+
 ### POST /admin/test-dsm-api
 
 Teste la connexion à l'API REST DSM Synology.
@@ -137,17 +195,25 @@ Synchronise les groupes et montages de tous les utilisateurs Nextcloud existants
 
 ---
 
-### POST /admin/apply-mounts
+### POST /admin/apply-storage
 
-Applique les montages SMB pour tous les groupes configurés (sans synchronisation LDAP).
+Applique les montages de toutes les correspondances enregistrées (sans synchronisation LDAP).
 
 **Réponse 200**
 ```json
 {
   "success": true,
-  "message": "Montages appliqués"
+  "results": [
+    { "status": "ok", "group": "Compta", "mount": "/User/Compta", "share": "User",
+      "message": "Montage créé : /User/Compta → /mnt/nas/User/Compta (groupe: Compta)" },
+    { "status": "warning", "group": "*", "mount": "/User/Commun",
+      "message": "Montage créé : /User/Commun → /mnt/nas/User/Commun (tous les utilisateurs) — ⚠ ce chemin n'existe pas dans le conteneur Nextcloud (montage NFS ou variable NEXTCLOUD_MOUNT manquante)." }
+  ]
 }
 ```
+
+`status` vaut `ok`, `inchangé` côté message, `warning` (montage créé mais à vérifier) ou
+`error`. `group` vaut `*` pour un montage commun à tous les utilisateurs.
 
 ---
 

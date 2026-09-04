@@ -504,6 +504,27 @@ tr.is-acl:hover td {
     background: #daeeda;
 }
 
+/* Ligne commune (tous les utilisateurs) */
+tr.is-all td {
+    background: #fdf3e3;
+}
+tr.is-all:hover td {
+    background: #f8e8cd;
+}
+
+/* Colonne Type (SMB / NFS) */
+.type-cell {
+    padding: 4px 6px !important;
+    vertical-align: middle;
+    width: 80px;
+}
+.type-cell select {
+    width: 100% !important;
+    font-size: 11px !important;
+    padding: 4px 6px !important;
+    cursor: pointer;
+}
+
 .auto-share-cell {
     padding: 6px 10px !important;
 }

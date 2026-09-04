@@ -396,4 +396,41 @@ class SynologyApiService {
             $this->logout($sid);
         }
     }
+
+    /**
+     * Liste les partages du NAS visibles par le compte API.
+     * `real_path` (ex. /volume1/User) sert de repère pour configurer la racine NFS.
+     *
+     * @return list<array{name: string, path: string, real_path: string}>
+     */
+    public function listShares(): array {
+        $sid = $this->login();
+        try {
+            $res = $this->apiGet('SYNO.FileStation.List', 2, 'list_share', [
+                'additional' => json_encode(['real_path']),
+                'limit'      => 200,
+            ], $sid);
+        } finally {
+            $this->logout($sid);
+        }
+
+        if (empty($res['success'])) {
+            $code = $res['error']['code'] ?? '?';
+            throw new \RuntimeException("Impossible de lister les partages (code {$code})");
+        }
+
+        $shares = [];
+        foreach ($res['data']['shares'] ?? [] as $share) {
+            if (empty($share['name'])) {
+                continue;
+            }
+            $shares[] = [
+                'name'      => (string) $share['name'],
+                'path'      => (string) ($share['path'] ?? ''),
+                'real_path' => (string) ($share['additional']['real_path'] ?? ''),
+            ];
+        }
+
+        return $shares;
+    }
 }

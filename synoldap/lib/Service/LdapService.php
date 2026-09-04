@@ -519,4 +519,142 @@ class LdapService {
             return ['success' => false, 'message' => $e->getMessage(), 'groups' => []];
         }
     }
+
+    // ─── Détection automatique du domaine ────────────────────────────────────
+
+    /**
+     * Interroge le RootDSE du contrôleur de domaine pour déduire la configuration.
+     *
+     * Sur un Synology Directory Server (Samba 4) comme sur un AD Microsoft, le
+     * RootDSE est lisible sans authentification : il expose defaultNamingContext
+     * (ex. DC=pavilly,DC=int) d'où l'on déduit les base DN.
+     *
+     * Si le compte de service est renseigné et valide, les conteneurs réels des
+     * utilisateurs et des groupes sont détectés (plus fiable que CN=Users).
+     *
+     * @return array<string, mixed>
+     */
+    public function detectDirectory(): array {
+        // Connexion dédiée : ne pas perturber la connexion de service mise en cache.
+        $conn = $this->connectRaw();
+
+        try {
+            $bindDn = $this->config->getAppValue(self::APP_ID, 'ldap_bind_dn', '');
+            $bound  = false;
+
+            if (!empty($bindDn)) {
+                $bindPwd = $this->config->getAppValue(self::APP_ID, 'ldap_bind_password', '');
+                $bound   = @ldap_bind($conn, $bindDn, $bindPwd);
+            }
+            if (!$bound) {
+                @ldap_bind($conn); // anonyme : suffisant pour lire le RootDSE
+            }
+
+            $read = @ldap_read($conn, '', '(objectClass=*)', [
+                'defaultNamingContext', 'rootDomainNamingContext', 'dnsHostName', 'ldapServiceName',
+            ]);
+
+            if (!$read) {
+                throw new \RuntimeException('RootDSE illisible : ' . ldap_error($conn));
+            }
+
+            $entries = ldap_get_entries($conn, $read);
+            $base = $entries[0]['defaultnamingcontext'][0]
+                ?? $entries[0]['rootdomainnamingcontext'][0]
+                ?? '';
+
+            if ($base === '') {
+                throw new \RuntimeException(
+                    "Domaine non détecté : l'annuaire n'expose pas defaultNamingContext. "
+                    . 'Renseignez les base DN manuellement.'
+                );
+            }
+
+            $userBase  = 'CN=Users,' . $base;
+            $groupBase = 'CN=Users,' . $base;
+
+            if ($bound) {
+                $userBase  = $this->findCommonContainer($conn, $base, '(&(objectClass=user)(objectCategory=person))') ?? $userBase;
+                $groupBase = $this->findCommonContainer($conn, $base, '(objectClass=group)') ?? $groupBase;
+            }
+
+            return [
+                'success'                => true,
+                'authenticated'          => $bound,
+                'domain'                 => $this->dnToDomain($base),
+                'base_dn'                => $base,
+                'dns_host'               => $entries[0]['dnshostname'][0] ?? '',
+                'ldap_user_base_dn'      => $userBase,
+                'ldap_group_base_dn'     => $groupBase,
+                'ldap_user_attr'         => 'sAMAccountName',
+                'ldap_user_object_class' => 'user',
+                'ldap_group_filter'      => 'group',
+                'ldap_member_attr'       => 'member',
+                'ldap_membership_mode'   => 'memberof',
+            ];
+        } finally {
+            @ldap_unbind($conn);
+        }
+    }
+
+    /**
+     * Retourne le conteneur commun le plus profond des entrées correspondant au filtre.
+     * Ex. utilisateurs dans CN=Users,DC=x et OU=Mairie,DC=x → DC=x
+     */
+    private function findCommonContainer(\LDAP\Connection $conn, string $base, string $filter): ?string {
+        $result = @ldap_search($conn, $base, $filter, ['dn'], 0, 200);
+        if (!$result) {
+            return null;
+        }
+
+        $entries = ldap_get_entries($conn, $result);
+        $parents = [];
+
+        for ($i = 0; $i < (int)($entries['count'] ?? 0); $i++) {
+            $dn    = (string)($entries[$i]['dn'] ?? '');
+            $parts = @ldap_explode_dn($dn, 0);
+            if (!$parts || (int) $parts['count'] < 2) {
+                continue;
+            }
+            $tail = [];
+            for ($j = 1; $j < (int) $parts['count']; $j++) {
+                $tail[] = $parts[$j];
+            }
+            $parents[] = $tail;
+        }
+
+        if (empty($parents)) {
+            return null;
+        }
+
+        $common = array_shift($parents);
+        foreach ($parents as $parent) {
+            $merged = [];
+            $i = count($common) - 1;
+            $j = count($parent) - 1;
+            while ($i >= 0 && $j >= 0 && strcasecmp($common[$i], $parent[$j]) === 0) {
+                array_unshift($merged, $common[$i]);
+                $i--;
+                $j--;
+            }
+            $common = $merged;
+            if (empty($common)) {
+                return null;
+            }
+        }
+
+        return implode(',', $common);
+    }
+
+    /** DC=pavilly,DC=int → pavilly.int */
+    private function dnToDomain(string $dn): string {
+        $labels = [];
+        foreach (explode(',', $dn) as $part) {
+            $part = trim($part);
+            if (stripos($part, 'DC=') === 0) {
+                $labels[] = substr($part, 3);
+            }
+        }
+        return implode('.', $labels);
+    }
 }

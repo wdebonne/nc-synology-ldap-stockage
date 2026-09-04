@@ -120,6 +120,12 @@
 
     // ─── Load config ─────────────────────────────────────────────────────────
 
+    /** Masque le bloc NFS ou le bloc SMB selon le transport par défaut. */
+    function refreshBackendBlocks() {
+        const isLocal = document.getElementById('storage_backend').value === 'local';
+        document.getElementById('local-block').style.display = isLocal ? '' : 'none';
+    }
+
     async function loadConfig() {
         try {
             const data = await apiFetch('/admin/config');
@@ -129,7 +135,8 @@
                 'ldap_user_base_dn', 'ldap_group_base_dn',
                 'ldap_membership_mode', 'ldap_user_attr',
                 'admin_ldap_group',
-                'synology_host', 'synology_smb_user', 'synology_smb_domain',
+                'synology_host', 'storage_backend', 'local_root',
+                'synology_smb_user', 'synology_smb_domain',
                 'synology_api_port', 'synology_api_user',
             ].forEach(key => {
                 const el = document.getElementById(key);
@@ -139,7 +146,9 @@
 
             document.getElementById('ldap_tls').checked        = data['ldap_tls'] === '1';
             document.getElementById('synology_api_ssl').checked = data['synology_api_ssl'] === '1';
+            document.getElementById('mount_enable_sharing').checked = data['mount_enable_sharing'] !== '0';
 
+            refreshBackendBlocks();
             renderMappings(data.group_mappings || []);
         } catch (e) {
             showStatus('Impossible de charger la configuration : ' + e.message, 'error');
@@ -157,7 +166,8 @@
     function getMappings() {
         const mappings = [];
         document.querySelectorAll('#mappings-body tr[data-index]').forEach(row => {
-            const mode = row.dataset.mode; // 'manual' | 'name' | 'acl'
+            const mode = row.dataset.mode; // 'manual' | 'name' | 'acl' | 'all'
+            const type = val(row, 'storage_type'); // '' = transport global
 
             if (mode === 'manual') {
                 const ldapGroup = val(row, 'ldap_group');
@@ -167,6 +177,7 @@
                 if (!ldapGroup && !ncUser) return;
                 mappings.push({
                     auto_mode:         false,
+                    storage_type:      type,
                     ldap_group:        ldapGroup,
                     nc_group:          ncGroup,
                     nc_user:           ncUser,
@@ -174,11 +185,24 @@
                     storage_subfolder: val(row, 'storage_subfolder'),
                     mount_point:       val(row, 'mount_point'),
                 });
+            } else if (mode === 'all') {
+                const share = val(row, 'storage_share');
+                const sub   = val(row, 'storage_subfolder');
+                const mount = val(row, 'mount_point');
+                if (!share && !sub && !mount) return;
+                mappings.push({
+                    auto_mode:         'all',
+                    storage_type:      type,
+                    storage_share:     share,
+                    storage_subfolder: sub,
+                    mount_point:       mount,
+                });
             } else {
                 const share = val(row, 'storage_share');
                 if (!share) return;
                 mappings.push({
                     auto_mode:    mode,           // 'name' ou 'acl'
+                    storage_type: type,
                     storage_share: share,
                     mount_prefix:  val(row, 'mount_prefix'),
                 });
@@ -198,18 +222,57 @@
 
     // ── HTML builders ─────────────────────────────────────────────────────────
 
+    function option(value, label, current) {
+        return `<option value="${esc(value)}" ${current === value ? 'selected' : ''}>${esc(label)}</option>`;
+    }
+
     function buildModeCell(mode) {
-        const isAcl  = mode === 'acl';
-        const isName = mode === 'name';
-        const isManu = mode === 'manual';
         return `
             <td class="mode-cell">
                 <select class="mode-select synoldap-table-input mode-select-input" title="Mode du montage">
-                    <option value="manual" ${isManu ? 'selected' : ''}>Manuel</option>
-                    <option value="name"   ${isName ? 'selected' : ''}>Auto nom</option>
-                    <option value="acl"    ${isAcl  ? 'selected' : ''}>Auto ACL ★</option>
+                    ${option('manual', 'Manuel', mode)}
+                    ${option('name',   'Auto nom', mode)}
+                    ${option('acl',    'Auto ACL ★', mode)}
+                    ${option('all',    'Commun (tous)', mode)}
                 </select>
             </td>`;
+    }
+
+    function buildTypeCell(type) {
+        return `
+            <td class="type-cell">
+                <select class="synoldap-table-input" data-field="storage_type"
+                        title="Transport utilisé pour ce montage">
+                    ${option('',      'Défaut', type)}
+                    ${option('smb',   'SMB', type)}
+                    ${option('local', 'NFS', type)}
+                </select>
+            </td>`;
+    }
+
+    function shareInput(value, placeholder, extraClass) {
+        return `<input type="text" class="synoldap-table-input ${extraClass || ''}"
+                    value="${esc(value || '')}" placeholder="${esc(placeholder)}"
+                    data-field="storage_share" list="synoldap-shares" />`;
+    }
+
+    function buildAllCells(data) {
+        return `
+            <td colspan="2" class="auto-share-cell">
+                <span class="auto-hint">👥 Visible par tous les utilisateurs</span>
+            </td>
+            <td>${shareInput(data.storage_share, 'User')}</td>
+            <td><input type="text" class="synoldap-table-input" value="${esc(data.storage_subfolder || '')}"
+                placeholder="(racine du partage)" data-field="storage_subfolder" /></td>
+            <td><input type="text" class="synoldap-table-input" value="${esc(data.mount_point || '')}"
+                placeholder="/User" data-field="mount_point" /></td>
+            <td></td>`;
+    }
+
+    function bodyCells(mode, data) {
+        if (mode === 'manual') return buildManualCells(data);
+        if (mode === 'all')    return buildAllCells(data);
+        return buildAutoCells(data, mode);
     }
 
     function buildManualCells(data) {
@@ -236,8 +299,7 @@
                 <input type="text" class="synoldap-table-input nc-user-input ${isUser ? '' : 'hidden'}"
                     value="${esc(data.nc_user || '')}" placeholder="uid.utilisateur" data-field="nc_user" />
             </td>
-            <td><input type="text" class="synoldap-table-input" value="${esc(data.storage_share || '')}"
-                placeholder="NextCloud" data-field="storage_share" /></td>
+            <td>${shareInput(data.storage_share, 'NextCloud')}</td>
             <td><input type="text" class="synoldap-table-input" value="${esc(data.storage_subfolder || '')}"
                 placeholder="Compta" data-field="storage_subfolder" /></td>
             <td><input type="text" class="synoldap-table-input" value="${esc(data.mount_point || '')}"
@@ -250,12 +312,10 @@
         const hintShare  = isAcl ? 'Partage racine (ex : Externe)' : 'Partage racine (ex : Externe)';
         const hintPrefix = 'Préfixe NC (ex : NAS → /NAS/Compta)';
         return `
-            <td colspan="4" class="auto-share-cell">
+            <td colspan="5" class="auto-share-cell">
                 <div class="auto-row-content">
                     <span class="auto-share-label">Partage :</span>
-                    <input type="text" class="synoldap-table-input auto-share-input"
-                        value="${esc(data.storage_share || '')}" placeholder="${esc(hintShare)}"
-                        data-field="storage_share" />
+                    ${shareInput(data.storage_share, hintShare, 'auto-share-input')}
                     ${isAcl
                         ? '<span class="auto-hint">→ ACL lues depuis Synology DSM à chaque connexion</span>'
                         : '<span class="auto-hint">→ sous-dossier = nom du groupe NC</span>'
@@ -277,7 +337,14 @@
     function rowMode(data) {
         if (!data.auto_mode || data.auto_mode === false) return 'manual';
         if (data.auto_mode === true || data.auto_mode === 'name') return 'name';
+        if (data.auto_mode === 'all') return 'all';
         return 'acl';
+    }
+
+    function applyRowClasses(row, mode) {
+        row.classList.toggle('is-auto', mode === 'name' || mode === 'acl');
+        row.classList.toggle('is-acl',  mode === 'acl');
+        row.classList.toggle('is-all',  mode === 'all');
     }
 
     function addMappingRow(data = {}, index = Date.now()) {
@@ -287,12 +354,12 @@
         const row = document.createElement('tr');
         row.dataset.index = index;
         row.dataset.mode  = mode;
-        if (mode !== 'manual') row.classList.add('is-auto');
-        if (mode === 'acl')    row.classList.add('is-acl');
+        applyRowClasses(row, mode);
 
         row.innerHTML =
             buildModeCell(mode) +
-            (mode === 'manual' ? buildManualCells(data) : buildAutoCells(data, mode)) +
+            buildTypeCell(data.storage_type || '') +
+            bodyCells(mode, data) +
             buildDeleteCell();
 
         bindRowEvents(row);
@@ -300,18 +367,23 @@
     }
 
     function rebuildRow(row, newMode) {
-        const curShare  = val(row, 'storage_share');
-        const curPrefix = val(row, 'mount_prefix');
-        const idx       = row.dataset.index;
+        // On conserve ce qui reste pertinent d'un mode à l'autre
+        const data = {
+            storage_type:      val(row, 'storage_type'),
+            storage_share:     val(row, 'storage_share'),
+            storage_subfolder: val(row, 'storage_subfolder'),
+            mount_point:       val(row, 'mount_point'),
+            mount_prefix:      val(row, 'mount_prefix'),
+        };
+        const idx = row.dataset.index;
 
         row.dataset.mode = newMode;
-        row.classList.toggle('is-auto', newMode !== 'manual');
-        row.classList.toggle('is-acl',  newMode === 'acl');
+        applyRowClasses(row, newMode);
 
-        const data = { storage_share: curShare, mount_prefix: curPrefix };
         row.innerHTML =
             buildModeCell(newMode) +
-            (newMode === 'manual' ? buildManualCells({}) : buildAutoCells(data, newMode)) +
+            buildTypeCell(data.storage_type) +
+            bodyCells(newMode, data) +
             buildDeleteCell();
 
         row.dataset.index = idx;
@@ -350,12 +422,8 @@
 
     // ─── Save config ─────────────────────────────────────────────────────────
 
-    async function saveConfig() {
-        const btn = document.getElementById('btn-save');
-        btn.disabled = true;
-        btn.textContent = '⏳ Sauvegarde…';
-
-        const payload = {
+    function collectPayload() {
+        return {
             ldap_host:            document.getElementById('ldap_host').value,
             ldap_port:            document.getElementById('ldap_port').value,
             ldap_tls:             document.getElementById('ldap_tls').checked ? '1' : '0',
@@ -367,6 +435,9 @@
             ldap_user_attr:       document.getElementById('ldap_user_attr').value,
             admin_ldap_group:     document.getElementById('admin_ldap_group').value,
             synology_host:        document.getElementById('synology_host').value,
+            storage_backend:      document.getElementById('storage_backend').value,
+            local_root:           document.getElementById('local_root').value,
+            mount_enable_sharing: document.getElementById('mount_enable_sharing').checked ? '1' : '0',
             synology_smb_user:    document.getElementById('synology_smb_user').value,
             synology_smb_password:document.getElementById('synology_smb_password').value,
             synology_smb_domain:  document.getElementById('synology_smb_domain').value,
@@ -376,9 +447,24 @@
             synology_api_password:document.getElementById('synology_api_password').value,
             group_mappings:       getMappings(),
         };
+    }
+
+    /**
+     * Enregistre la configuration sans retour visuel.
+     * Les tests serveur travaillent sur les valeurs enregistrées : on sauvegarde
+     * silencieusement avant chaque test pour éviter de tester une ancienne config.
+     */
+    async function persistConfig() {
+        return apiFetch('/admin/config', 'POST', collectPayload());
+    }
+
+    async function saveConfig() {
+        const btn = document.getElementById('btn-save');
+        btn.disabled = true;
+        btn.textContent = '⏳ Sauvegarde…';
 
         try {
-            const res = await apiFetch('/admin/config', 'POST', payload);
+            const res = await apiFetch('/admin/config', 'POST', collectPayload());
             showStatus(res.message || 'Configuration sauvegardée.', 'success');
             showLog(res.message, 'success');
         } catch (e) {
@@ -782,6 +868,136 @@
         }
     }
 
+    // ─── Détection du domaine AD ─────────────────────────────────────────────
+
+    async function detectAd() {
+        const btn    = document.getElementById('btn-detect-ad');
+        const result = document.getElementById('detect-ad-result');
+        btn.disabled = true;
+        btn.textContent = '⏳ Détection…';
+        result.textContent = '';
+
+        try {
+            await persistConfig();
+            const res = await apiFetch('/admin/detect-ad', 'POST', {});
+
+            if (!res.success) {
+                result.className = 'synoldap-inline-result synoldap-err';
+                result.textContent = '✗ ' + res.message;
+                showLog('Détection AD : ' + res.message, 'error');
+                return;
+            }
+
+            ['ldap_user_base_dn', 'ldap_group_base_dn', 'ldap_user_attr', 'ldap_membership_mode']
+                .forEach(key => {
+                    if (res[key]) document.getElementById(key).value = res[key];
+                });
+
+            const detail = 'Domaine ' + res.domain + ' (' + res.base_dn + ')'
+                + (res.authenticated ? '' : ' — lecture anonyme : vérifiez les base DN proposées');
+            result.className = 'synoldap-inline-result synoldap-ok';
+            result.textContent = '✓ ' + detail;
+            showLog('Détection AD : ' + detail, 'success');
+            showStatus('Domaine détecté — pensez à sauvegarder la configuration.', 'success');
+        } catch (e) {
+            result.className = 'synoldap-inline-result synoldap-err';
+            result.textContent = '✗ ' + e.message;
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '🧭 Détecter le domaine automatiquement';
+        }
+    }
+
+    // ─── Transport local (NFS) ───────────────────────────────────────────────
+
+    async function testLocal() {
+        const btn    = document.getElementById('btn-test-local');
+        const result = document.getElementById('local-test-result');
+        btn.disabled = true;
+        btn.textContent = '⏳ Vérification…';
+        result.textContent = '';
+
+        try {
+            await persistConfig();
+            const res = await apiFetch('/admin/test-local', 'POST', {});
+            result.className = 'synoldap-inline-result ' + (res.success ? 'synoldap-ok' : 'synoldap-err');
+            result.textContent = (res.success ? '✓ ' : '✗ ') + res.message;
+            showLog('Chemin local : ' + res.message, res.success ? 'success' : 'error');
+
+            const box  = document.getElementById('local-folders');
+            const list = document.getElementById('local-folders-list');
+            list.innerHTML = '';
+            if (res.success && res.folders && res.folders.length) {
+                res.folders.forEach(folder => {
+                    const tag = document.createElement('span');
+                    tag.className = 'synoldap-tag';
+                    tag.textContent = folder;
+                    list.appendChild(tag);
+                });
+                box.style.display = '';
+            } else {
+                box.style.display = 'none';
+            }
+        } catch (e) {
+            result.className = 'synoldap-inline-result synoldap-err';
+            result.textContent = '✗ ' + e.message;
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '📂 Vérifier le chemin local';
+        }
+    }
+
+    // ─── Liste des partages du NAS ───────────────────────────────────────────
+
+    async function listShares() {
+        const btn    = document.getElementById('btn-list-shares');
+        const result = document.getElementById('dsm-api-test-result');
+        btn.disabled = true;
+        btn.textContent = '⏳ Lecture…';
+
+        try {
+            await persistConfig();
+            const res = await apiFetch('/admin/shares');
+
+            if (!res.success) {
+                result.className = 'synoldap-inline-result synoldap-err';
+                result.textContent = '✗ ' + res.message;
+                showLog('Partages : ' + res.message, 'error');
+                return;
+            }
+
+            const datalist = document.getElementById('synoldap-shares');
+            const list     = document.getElementById('shares-list');
+            datalist.innerHTML = '';
+            list.innerHTML = '';
+
+            res.shares.forEach(share => {
+                const opt = document.createElement('option');
+                opt.value = share.name;
+                datalist.appendChild(opt);
+
+                const tag = document.createElement('span');
+                tag.className = 'synoldap-tag';
+                tag.textContent = share.name;
+                tag.dataset.share = share.name;
+                tag.title = (share.real_path || share.path || '')
+                    + ' — cliquer pour créer une ligne « Auto ACL » sur ce partage';
+                list.appendChild(tag);
+            });
+
+            document.getElementById('shares-preview').style.display = res.shares.length ? '' : 'none';
+            result.className = 'synoldap-inline-result synoldap-ok';
+            result.textContent = '✓ ' + res.shares.length + ' partage(s)';
+            showLog(res.shares.length + ' partage(s) trouvé(s) sur le NAS', 'success');
+        } catch (e) {
+            result.className = 'synoldap-inline-result synoldap-err';
+            result.textContent = '✗ ' + e.message;
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '📚 Lister les partages du NAS';
+        }
+    }
+
     // ─── Init ─────────────────────────────────────────────────────────────────
 
     document.addEventListener('DOMContentLoaded', () => {
@@ -789,6 +1005,10 @@
         initSectionEnableToggles();
         loadConfig();
 
+        document.getElementById('storage_backend').addEventListener('change', refreshBackendBlocks);
+        document.getElementById('btn-detect-ad').addEventListener('click', detectAd);
+        document.getElementById('btn-test-local').addEventListener('click', testLocal);
+        document.getElementById('btn-list-shares').addEventListener('click', listShares);
         document.getElementById('btn-test-ldap').addEventListener('click', testLdap);
         document.getElementById('btn-test-smb').addEventListener('click', testSmb);
         document.getElementById('btn-test-dsm-api').addEventListener('click', testDsmApi);
@@ -815,6 +1035,15 @@
         document.getElementById('ldap-groups-list').addEventListener('click', e => {
             if (e.target.classList.contains('synoldap-tag')) {
                 addMappingRow({ ldap_group: e.target.textContent }, Date.now());
+                document.getElementById('mappings-section').scrollIntoView({ behavior: 'smooth' });
+            }
+        });
+
+        // Clic sur un partage → nouvelle ligne « Auto ACL » sur ce partage
+        document.getElementById('shares-list').addEventListener('click', e => {
+            if (e.target.classList.contains('synoldap-tag')) {
+                const share = e.target.dataset.share || e.target.textContent;
+                addMappingRow({ auto_mode: 'acl', storage_share: share, mount_prefix: share }, Date.now());
                 document.getElementById('mappings-section').scrollIntoView({ behavior: 'smooth' });
             }
         });

@@ -136,6 +136,57 @@ Renseigner le port, l'utilisateur et le mot de passe DSM dans la section "Connex
 
 ---
 
+## Problèmes de montages NFS / local
+
+### « … est introuvable depuis le conteneur Nextcloud »
+
+Le chemin n'existe pas **dans le conteneur** — même s'il existe sur l'hôte.
+
+```bash
+# 1. Le montage NFS est-il actif sur l'hôte ?
+mount | grep nfs
+ls /mnt/nas/User
+
+# 2. Est-il visible dans le conteneur ?
+docker exec -u www-data nextcloud-aio-nextcloud ls -l /mnt/nas/User
+```
+
+- **Nextcloud AIO** : la variable `NEXTCLOUD_MOUNT=/mnt/` doit être posée sur le
+  *mastercontainer*, qui doit ensuite être recréé (et le conteneur applicatif redémarré).
+- **Image officielle** : ajouter `- /mnt/nas:/mnt/nas` dans les `volumes` du conteneur.
+- Un montage NFS fait **après** le démarrage du conteneur n'est pas propagé : remonter le
+  partage puis redémarrer le conteneur (ou monter avec la propagation `rshared`).
+
+### « … existe mais n'est pas lisible par l'utilisateur du conteneur »
+
+Nextcloud accède aux fichiers avec l'uid **33** (`www-data`).
+
+- Vérifier le squash NFS côté DSM (*Dossier partagé → Modifier → Autorisations NFS*) :
+  passer sur `Mapper tous les utilisateurs sur admin` si les ACL Windows bloquent l'uid 33.
+- Vérifier le privilège NFS (Lecture seule / Lecture-écriture).
+- Contrôler côté hôte : `ls -ln /mnt/nas/User` puis `sudo -u \#33 ls /mnt/nas/User`.
+
+### « Backend « Local » indisponible »
+
+Le backend local de `files_external` est désactivé :
+
+```bash
+sudo -u www-data php /var/www/nextcloud/occ config:system:get files_external_allow_local_storage_mount
+# s'il retourne false :
+sudo -u www-data php /var/www/nextcloud/occ config:system:delete files_external_allow_local_storage_mount
+```
+
+### Les fichiers modifiés depuis Windows n'apparaissent pas
+
+Les montages créés par l'app posent `filesystem_check_changes = 1` (relecture à chaque accès
+direct). Si un dossier reste périmé :
+
+```bash
+sudo -u www-data php /var/www/nextcloud/occ files:scan --path="/<user>/files/User/Compta"
+```
+
+---
+
 ## Problèmes de performances
 
 ### Connexion lente
