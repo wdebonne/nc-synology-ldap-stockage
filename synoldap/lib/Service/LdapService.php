@@ -74,17 +74,41 @@ class LdapService {
             if (!@ldap_bind($conn, $bindDn, $bindPwd)) {
                 $err = ldap_error($conn);
                 ldap_unbind($conn);
-                throw new \RuntimeException("Authentification LDAP échouée pour {$bindDn}: {$err}");
+                throw new \RuntimeException(
+                    "Authentification LDAP échouée pour {$bindDn}: {$err}" . $this->bindHint($err, $bindDn)
+                );
             }
         } else {
             if (!@ldap_bind($conn)) {
                 $err = ldap_error($conn);
                 ldap_unbind($conn);
-                throw new \RuntimeException("Connexion LDAP anonyme refusée: {$err}");
+                throw new \RuntimeException("Connexion LDAP anonyme refusée: {$err}" . $this->bindHint($err, ''));
             }
         }
 
         return $conn;
+    }
+
+    /**
+     * Traduit les erreurs de bind les plus fréquentes en action concrète.
+     *
+     * « Strong(er) authentication required » : Active Directory et Samba 4 refusent par
+     * défaut un bind simple en clair — c'est le comportement du Synology Directory Server.
+     * Le chiffrement LDAPS est alors obligatoire.
+     */
+    private function bindHint(string $error, string $bindDn): string {
+        $hints = [];
+
+        if (stripos($error, 'strong') !== false) {
+            $hints[] = 'le contrôleur de domaine refuse les connexions non chiffrées : '
+                . 'cochez « Utiliser LDAPS (SSL/TLS) » et passez le port à 636';
+        }
+        if ($bindDn !== '' && stripos($error, 'invalid') !== false && stripos($bindDn, 'CN=') !== 0) {
+            $hints[] = 'le Bind DN doit commencer par « CN= » '
+                . '(ex. CN=NEXTCLOUD,CN=Users,DC=exemple,DC=int)';
+        }
+
+        return empty($hints) ? '' : ' → ' . implode(' ; ', $hints) . '.';
     }
 
     /**

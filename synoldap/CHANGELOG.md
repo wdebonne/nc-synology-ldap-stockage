@@ -1,5 +1,18 @@
 # Changelog
 
+## [3.4.3] - 2026-09-04
+
+### Ajouté
+
+- **Diagnostic des erreurs de bind LDAP** : le message d'erreur propose maintenant l'action
+  corrective. « Strong(er) authentication required » — refus des connexions non chiffrées par
+  Active Directory / Samba 4, comportement par défaut du Synology Directory Server — invite à
+  activer LDAPS et le port 636. Un Bind DN ne commençant pas par `CN=` est également signalé.
+- **Port LDAP automatique** : cocher « Utiliser LDAPS » bascule le port de 389 à 636 (et
+  inversement), sauf si un port personnalisé a été saisi.
+
+---
+
 ## [3.4.2] - 2026-09-04
 
 ### Modifié

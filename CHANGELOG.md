@@ -7,6 +7,20 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ---
 
+## [3.4.3] — 2026-09-04
+
+### Ajouté — Diagnostic des erreurs de connexion LDAP
+
+Le Synology Directory Server (Samba 4), comme Active Directory, refuse par défaut les binds
+simples non chiffrés : le test de connexion renvoyait un laconique « Strong(er) authentication
+required ». Le message indique désormais quoi faire — activer LDAPS et passer le port à 636 —
+et signale aussi un Bind DN mal formé (ne commençant pas par `CN=`).
+
+Cocher « Utiliser LDAPS (SSL/TLS) » bascule par ailleurs automatiquement le port de 389 à 636,
+et inversement, tant que le port n'a pas été personnalisé.
+
+---
+
 ## [3.4.2] — 2026-09-04
 
 ### Modifié

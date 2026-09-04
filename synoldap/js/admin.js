@@ -1008,6 +1008,13 @@
         loadConfig();
 
         document.getElementById('storage_backend').addEventListener('change', refreshBackendBlocks);
+
+        // LDAPS ↔ port : 389 en clair, 636 chiffré — évite l'oubli le plus courant
+        document.getElementById('ldap_tls').addEventListener('change', function () {
+            const port = document.getElementById('ldap_port');
+            if (this.checked && port.value === '389') port.value = '636';
+            if (!this.checked && port.value === '636') port.value = '389';
+        });
         document.getElementById('btn-detect-ad').addEventListener('click', detectAd);
         document.getElementById('btn-test-local').addEventListener('click', testLocal);
         document.getElementById('btn-list-shares').addEventListener('click', listShares);
